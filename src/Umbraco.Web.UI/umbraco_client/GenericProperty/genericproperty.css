@@ -14,10 +14,6 @@
   list-style: none;
 }
 
-.genericPropertyList .inherited {
-    opacity: .6;
-}
-
 .genericPropertyList li {
   padding: 7px;
   display: block;
