@@ -169,12 +169,43 @@ angular.module("umbraco.directives")
         scope.setTreePadding = function(node) {
           return { 'padding-left': (node.level * 20) + "px" };
         };
+		
+
+
+        scope.sortableOptions = {
+            connectWith: ".item",
+            cursor: "move",
+		    update: function (e, ui) {
+		    	// Only trigger on destination not pareent nodes in tree.
+		    	if (_.filter(e.target.childNodes, function (item) { return $(item).scope() == $(ui.item).scope() }).length == 0)
+		    		return;
+
+		    	var nodeId = ui.item.scope().node.id;
+		    	var parentId = ui.item.scope().node.parent().id;
+		    	var index = ui.item.scope().node.parent().children.indexOf(ui.item.scope().node);
+		    	var newParentId = $(e.target.parentElement).scope().node.id;
+		    	var newIndex = ui.item.index();
+
+		    	console.log("Found node " + nodeId + " in parent " + parentId + ". Moving to " + newParentId + ". Updating index from " + index + " to " + newIndex + ".");
+
+		    	// Verify node can be moed here.
+
+		    	// Move Node
+
+		    	// Sync client side ui changes.
+		    	$(e.target.parentElement).scope().loadChildren($(e.target.parentElement).scope().node, true);
+
+		    	if (ui.item.scope().item == "can't be moved") {
+		    		ui.item.sortable.cancel();
+		    	}
+		    }
+        };
 
         //if the current path contains the node id, we will auto-expand the tree item children
 
         styleNode(scope.node);
         
-        var template = '<ul ng-class="{collapsed: !node.expanded}"><umb-tree-item  ng-repeat="child in node.children" eventhandler="eventhandler" tree="tree" current-node="currentNode" node="child" section="{{section}}" ng-animate="animation()"></umb-tree-item></ul>';
+        var template = '<ul ui-sortable="sortableOptions" class="item" ng-class="{collapsed: !node.expanded}"><umb-tree-item  ng-repeat="child in node.children" eventhandler="eventhandler" tree="tree" current-node="currentNode" node="child" section="{{section}}" ng-animate="animation()"></umb-tree-item></ul>';
         var newElement = angular.element(template);
         $compile(newElement)(scope);
         element.append(newElement);
