@@ -178,40 +178,85 @@ angular.module("umbraco.directives")
             items: '>li',
             axis: 'y',
             tolerance: 'pointer',
-            containment: '.item:first',
+            containment: '.umb-tree .root>ul',//.item:first
             disabled: !scope.section.match("content|media"),
             update: function (e, ui) {
                 var nodeId = ui.item.scope().node.id;
                 var parentId = ui.item.scope().node.parent().id;
-                var index = ui.item.scope().node.parent().children.indexOf(ui.item.scope().node);
+                //var index = ui.item.scope().node.parent().children.indexOf(ui.item.scope().node);
                 var newParentId = $(e.target.parentElement).scope().node.id;
-                var newIndex = ui.item.index();
+                //var newIndex = ui.item.index();
 
                 // Ignore if this is just a sort order change.
                 if (parentId == newParentId)
                     return;
 
-                console.log("Found node " + nodeId + " in parent " + parentId + ". Moving to " + newParentId + ". Updating index from " + index + " to " + newIndex + ".");
-
-                // Verify node can be moed here.
-
-                // Move Node
-
-                // Sync client side ui changes.
-                //$(e.target.parentElement).scope().loadChildren($(e.target.parentElement).scope().node, true);
-
-                if (ui.item.scope().item == "can't be moved") {
-                    ui.item.sortable.cancel();
+                //Now we need to check if this is for media or content because that will depend on the resources we use
+                var contentResource, contentTypeResource;
+                if (scope.section === "media") {
+                    contentResource = $injector.get('mediaResource');
+                    contentTypeResource = $injector.get('mediaTypeResource');
                 }
+                else if (scope.section === "content") {
+                    contentResource = $injector.get('contentResource');
+                    contentTypeResource = $injector.get('contentTypeResource');
+                } else {
+                    return;
+                }
+
+                if (newParentId == -20 || newParentId == -21)
+                    // Delete the node
+                    contentResource.deleteById(nodeId)
+                        .then(function () {
+                            $(e.target.parentElement).scope().loadChildren($(e.target.parentElement).scope().node, true);
+                        });
+                else
+                    // Move node, this will automaticaly validate the move.
+                    contentResource.move({ parentId: newParentId, id: nodeId })
+                        .then(function () {
+                            // Sync client side ui changes.
+                            $(e.target.parentElement).scope().loadChildren($(e.target.parentElement).scope().node, true);
+                        }, function (err) {
+                            // Reload source and destination on a invalide move.
+                            $(e.target.parentElement).scope().loadChildren($(e.target.parentElement).scope().node, true);
+                            ui.item.scope().loadChildren(ui.item.scope().node.parent(), true);
+                        })
+            },
+            start: function (e, ui) {
+                // Store the original sort direction.
+                scope.originalSort = _.map(ui.item.scope().node.parent().children, function (item) { return item.id; });
             },
             stop: function (e, ui) {
-                var nodeId = ui.item.scope().node.id;
-                var newIndex = ui.item.index();
+                //var nodeId = ui.item.scope().node.id;
+                var newParentId = $(e.target.parentElement).scope().node.id;
+                //var newIndex = ui.item.index();
 
-                console.log("Found node " + nodeId + ". Updating index to " + newIndex + ".");
+                // Update sort order for all children of the parent node.
+                var sortOrder = _.map($(e.target.parentElement).scope().node.children, function (item) { return item.id; });
 
-                // Update sort order.
+                // Don't do anything if there are no changes.
+                if (sortOrder.join() === scope.originalSort.join()) {
+                    return;
+                }
 
+                //Now we need to check if this is for media or content because that will depend on the resources we use
+                var contentResource, contentTypeResource;
+                if (scope.section === "media") {
+                    contentResource = $injector.get('mediaResource');
+                    contentTypeResource = $injector.get('mediaTypeResource');
+                }
+                else if (scope.section === "content") {
+                    contentResource = $injector.get('contentResource');
+                    contentTypeResource = $injector.get('contentTypeResource');
+                } else {
+                    return;
+                }
+
+                // Post new sort order
+                contentResource.sort({ parentId: newParentId, sortedIds: sortOrder })
+                    .then(function () {
+                        scope.complete = true;
+                    });
             }
         };
 
