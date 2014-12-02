@@ -175,30 +175,44 @@ angular.module("umbraco.directives")
         scope.sortableOptions = {
             connectWith: ".item",
             cursor: "move",
-		    update: function (e, ui) {
-		    	// Only trigger on destination not pareent nodes in tree.
-		    	if (_.filter(e.target.childNodes, function (item) { return $(item).scope() == $(ui.item).scope() }).length == 0)
-		    		return;
+            items: '>li',
+            axis: 'y',
+            tolerance: 'pointer',
+            containment: '.item:first',
+            disabled: !scope.section.match("content|media"),
+            update: function (e, ui) {
+                var nodeId = ui.item.scope().node.id;
+                var parentId = ui.item.scope().node.parent().id;
+                var index = ui.item.scope().node.parent().children.indexOf(ui.item.scope().node);
+                var newParentId = $(e.target.parentElement).scope().node.id;
+                var newIndex = ui.item.index();
 
-		    	var nodeId = ui.item.scope().node.id;
-		    	var parentId = ui.item.scope().node.parent().id;
-		    	var index = ui.item.scope().node.parent().children.indexOf(ui.item.scope().node);
-		    	var newParentId = $(e.target.parentElement).scope().node.id;
-		    	var newIndex = ui.item.index();
+                // Ignore if this is just a sort order change.
+                if (parentId == newParentId)
+                    return;
 
-		    	console.log("Found node " + nodeId + " in parent " + parentId + ". Moving to " + newParentId + ". Updating index from " + index + " to " + newIndex + ".");
+                console.log("Found node " + nodeId + " in parent " + parentId + ". Moving to " + newParentId + ". Updating index from " + index + " to " + newIndex + ".");
 
-		    	// Verify node can be moed here.
+                // Verify node can be moed here.
 
-		    	// Move Node
+                // Move Node
 
-		    	// Sync client side ui changes.
-		    	$(e.target.parentElement).scope().loadChildren($(e.target.parentElement).scope().node, true);
+                // Sync client side ui changes.
+                //$(e.target.parentElement).scope().loadChildren($(e.target.parentElement).scope().node, true);
 
-		    	if (ui.item.scope().item == "can't be moved") {
-		    		ui.item.sortable.cancel();
-		    	}
-		    }
+                if (ui.item.scope().item == "can't be moved") {
+                    ui.item.sortable.cancel();
+                }
+            },
+            stop: function (e, ui) {
+                var nodeId = ui.item.scope().node.id;
+                var newIndex = ui.item.index();
+
+                console.log("Found node " + nodeId + ". Updating index to " + newIndex + ".");
+
+                // Update sort order.
+
+            }
         };
 
         //if the current path contains the node id, we will auto-expand the tree item children
