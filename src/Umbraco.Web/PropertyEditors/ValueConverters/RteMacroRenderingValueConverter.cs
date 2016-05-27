@@ -31,7 +31,7 @@ namespace Umbraco.Web.PropertyEditors.ValueConverters
         // global UmbracoContext.Current.InPreviewMode status. So it
         // should never execute in // over the same UmbracoContext with
         // different preview modes.
-	    static string RenderRteMacros(string source, bool preview)
+	    internal static string RenderRteMacros(string source, bool preview)
         {
             // save and set for macro rendering
             var inPreviewMode = UmbracoContext.Current.InPreviewMode;

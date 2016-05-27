@@ -1,4 +1,8 @@
 ﻿@model dynamic
 @using Umbraco.Web.Templates
 
-@Html.Raw(TemplateUtilities.ParseInternalLinks(Model.value.ToString()))
+@Html.Raw(
+    TemplateUtilities.ParseAndRenderMacros(
+            TemplateUtilities.ResolveUrlsFromTextString(
+                TemplateUtilities.ParseInternalLinks(Model.value.ToString(), UmbracoContext.Current.InPreviewMode)), 
+            UmbracoContext.Current.InPreviewMode))

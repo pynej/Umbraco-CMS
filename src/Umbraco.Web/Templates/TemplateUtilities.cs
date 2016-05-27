@@ -4,6 +4,8 @@ using Umbraco.Core;
 using Umbraco.Core.Configuration;
 using Umbraco.Core.IO;
 using Umbraco.Core.Logging;
+using Umbraco.Core.Macros;
+using Umbraco.Web.PropertyEditors.ValueConverters;
 
 namespace Umbraco.Web.Templates
 {
@@ -16,7 +18,7 @@ namespace Umbraco.Web.Templates
 	public static class TemplateUtilities
 	{
         //TODO: Pass in an Umbraco context!!!!!!!! Don't rely on the singleton so things are more testable
-        internal static string ParseInternalLinks(string text, bool preview)
+        public static string ParseInternalLinks(string text, bool preview)
 	    {
             // save and set for url provider
             var inPreviewMode = UmbracoContext.Current.InPreviewMode;
@@ -107,5 +109,11 @@ namespace Umbraco.Web.Templates
 		    return text;
 		}
 
+	    public static string ParseAndRenderMacros(string text, bool isPreview)
+	    {
+	        return RteMacroRenderingValueConverter.RenderRteMacros(text, isPreview);
+	    }
+
 	}
 }
+
