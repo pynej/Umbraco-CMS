@@ -86,7 +86,7 @@ namespace Umbraco.Tests.Web.Mvc
 
             view.ViewContext = GetViewContext();
 
-            Assert.Throws<InvalidCastException>(() => view.SetViewDataX(viewData));
+            Assert.Throws<ModelBindingException>(() => view.SetViewDataX(viewData));
         }
 
         [Test]
@@ -129,7 +129,7 @@ namespace Umbraco.Tests.Web.Mvc
 
             view.ViewContext = GetViewContext();
 
-            Assert.Throws<InvalidCastException>(() => view.SetViewDataX(viewData));
+            Assert.Throws<ModelBindingException>(() => view.SetViewDataX(viewData));
         }
 
         #endregion
@@ -187,7 +187,7 @@ namespace Umbraco.Tests.Web.Mvc
             var viewData = new ViewDataDictionary(model);
 
             view.ViewContext = GetViewContext();
-            Assert.Throws<InvalidCastException>(() => view.SetViewDataX(viewData));
+            Assert.Throws<ModelBindingException>(() => view.SetViewDataX(viewData));
         }
 
         [Test]
@@ -229,7 +229,7 @@ namespace Umbraco.Tests.Web.Mvc
             var viewData = new ViewDataDictionary(model);
 
             view.ViewContext = GetViewContext();
-            Assert.Throws<InvalidCastException>(() => view.SetViewDataX(viewData));
+            Assert.Throws<ModelBindingException>(() => view.SetViewDataX(viewData));
         }
 
         #endregion
@@ -285,7 +285,7 @@ namespace Umbraco.Tests.Web.Mvc
             var viewData = new ViewDataDictionary(content);
 
             view.ViewContext = GetViewContext();
-            Assert.Throws<InvalidCastException>(() =>view.SetViewDataX(viewData));
+            Assert.Throws<ModelBindingException>(() =>view.SetViewDataX(viewData));
         }
         
         [Test]
@@ -309,7 +309,7 @@ namespace Umbraco.Tests.Web.Mvc
             var viewData = new ViewDataDictionary(content);
 
             view.ViewContext = GetViewContext();
-            Assert.Throws<InvalidCastException>(() => view.SetViewDataX(viewData));
+            Assert.Throws<ModelBindingException>(() => view.SetViewDataX(viewData));
         }
 
         [Test]
@@ -389,6 +389,7 @@ namespace Umbraco.Tests.Web.Mvc
                     new Mock<IDataTypeService>().Object,
                     new Mock<IFileService>().Object,
                     new Mock<ILocalizationService>().Object,
+                    new Mock<IEntityService>().Object,
                     new Mock<IUserService>().Object,
                     new RepositoryFactory(CacheHelper.CreateDisabledCacheHelper(), logger, Mock.Of<ISqlSyntaxProvider>(), umbracoSettings),
                     new Mock<IDatabaseUnitOfWorkProvider>().Object),

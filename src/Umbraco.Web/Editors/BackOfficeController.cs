@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -7,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
+using System.Web.Configuration;
 using System.Web.Mvc;
 using System.Web.UI;
 using ClientDependency.Core.Config;
@@ -179,6 +181,13 @@ namespace Umbraco.Web.Editors
             return new JsonNetResult { Data = gridConfig.EditorsConfig.Editors, Formatting = Formatting.Indented };
         }
 
+        private string GetMaxRequestLength()
+        {
+            var section = ConfigurationManager.GetSection("system.web/httpRuntime") as HttpRuntimeSection;
+            if (section == null) return string.Empty;
+            return section.MaxRequestLength.ToString();
+        }
+
         /// <summary>
         /// Returns the JavaScript object representing the static server variables javascript object
         /// </summary>
@@ -342,6 +351,14 @@ namespace Umbraco.Web.Editors
                                 "imageFileTypes",
                                 string.Join(",", UmbracoConfig.For.UmbracoSettings().Content.ImageFileTypes)
                             },
+                            {
+                                "disallowedUploadFiles",
+                                string.Join(",", UmbracoConfig.For.UmbracoSettings().Content.DisallowedUploadFiles)
+                            },
+                            {
+                                "maxFileSize",
+                                GetMaxRequestLength()
+                            },
                             {"keepUserLoggedIn", UmbracoConfig.For.UmbracoSettings().Security.KeepUserLoggedIn},
                             {"cssPath", IOHelper.ResolveUrl(SystemDirectories.Css).TrimEnd('/')},
                         }
@@ -390,7 +407,7 @@ namespace Umbraco.Web.Editors
 
             return JavaScript(result);
         }
-
+        
         [HttpPost]
         public ActionResult ExternalLogin(string provider, string redirectUrl = null)
         {
@@ -630,6 +647,7 @@ namespace Umbraco.Web.Editors
             app.Add("applicationPath", HttpContext.Request.ApplicationPath.EnsureEndsWith('/'));
             return app;
         }
+        
 
         private IEnumerable<Dictionary<string, string>> GetTreePluginsMetaData()
         {

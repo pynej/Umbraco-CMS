@@ -2,6 +2,8 @@
 using System.Collections.Generic;
 using System.Linq;
 using Umbraco.Core.Cache;
+using Umbraco.Core.Events;
+using Umbraco.Core.Exceptions;
 using Umbraco.Core.Logging;
 using Umbraco.Core.Models;
 using Umbraco.Core.Models.EntityBase;
@@ -11,6 +13,7 @@ using Umbraco.Core.Persistence.Factories;
 using Umbraco.Core.Persistence.Querying;
 using Umbraco.Core.Persistence.SqlSyntax;
 using Umbraco.Core.Persistence.UnitOfWork;
+using Umbraco.Core.Services;
 
 namespace Umbraco.Core.Persistence.Repositories
 {
@@ -73,7 +76,6 @@ namespace Umbraco.Core.Persistence.Repositories
                     .OrderBy(x => x.Name);
         }
         
-
         /// <summary>
         /// Gets all entities of the specified <see cref="PropertyType"/> query
         /// </summary>
@@ -85,17 +87,15 @@ namespace Umbraco.Core.Persistence.Repositories
             return ints.Any()
                 ? GetAll(ints)
                 : Enumerable.Empty<IMediaType>();
-        }
-
-        #region Overrides of PetaPocoRepositoryBase<int,IMedia>
-
+        }       
+        
         protected override Sql GetBaseQuery(bool isCount)
         {
             var sql = new Sql();
             sql.Select(isCount ? "COUNT(*)" : "*")
-                .From<ContentTypeDto>()
-                .InnerJoin<NodeDto>()
-                .On<ContentTypeDto, NodeDto>(left => left.NodeId, right => right.NodeId)
+                .From<ContentTypeDto>(SqlSyntax)
+                .InnerJoin<NodeDto>(SqlSyntax)
+                .On<ContentTypeDto, NodeDto>(SqlSyntax, left => left.NodeId, right => right.NodeId)
                 .Where<NodeDto>(x => x.NodeObjectType == NodeObjectTypeId);
             return sql;
         }
@@ -128,19 +128,12 @@ namespace Umbraco.Core.Persistence.Repositories
         {
             get { return new Guid(Constants.ObjectTypes.MediaType); }
         }
-
-        #endregion
-
-        #region Unit of Work Implementation
-
+        
         protected override void PersistNewItem(IMediaType entity)
         {
             ((MediaType)entity).AddingEntity();
 
-            var factory = new MediaTypeFactory(NodeObjectTypeId);
-            var dto = factory.BuildDto(entity);
-
-            PersistNewBaseContentType(dto, entity);
+            PersistNewBaseContentType(entity);
 
             entity.ResetDirtyProperties();
         }
@@ -165,15 +158,10 @@ namespace Umbraco.Core.Persistence.Repositories
                 entity.SortOrder = maxSortOrder + 1;
             }
 
-            var factory = new MediaTypeFactory(NodeObjectTypeId);
-            var dto = factory.BuildDto(entity);
-            
-            PersistUpdatedBaseContentType(dto, entity);
+            PersistUpdatedBaseContentType(entity);
 
             entity.ResetDirtyProperties();
         }
-
-        #endregion
 
         protected override IMediaType PerformGet(Guid id)
         {

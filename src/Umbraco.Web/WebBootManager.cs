@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Configuration;
 using System.Linq;
+using System.Reflection;
 using System.Web;
 using System.Web.Configuration;
 using System.Web.Http;
@@ -45,6 +46,7 @@ using Umbraco.Core.Persistence;
 using Umbraco.Core.Persistence.UnitOfWork;
 using Umbraco.Core.Publishing;
 using Umbraco.Core.Services;
+using Umbraco.Web.Editors;
 using GlobalSettings = Umbraco.Core.Configuration.GlobalSettings;
 using ProfilingViewEngine = Umbraco.Core.Profiling.ProfilingViewEngine;
 
@@ -87,7 +89,7 @@ namespace Umbraco.Web
         protected override ServiceContext CreateServiceContext(DatabaseContext dbContext, IDatabaseFactory dbFactory)
         {
             //use a request based messaging factory
-            var evtMsgs = new RequestLifespanMessagesFactory(new SingletonUmbracoContextAccessor());
+            var evtMsgs = new RequestLifespanMessagesFactory(new SingletonHttpContextAccessor());
             return new ServiceContext(
                 new RepositoryFactory(ApplicationCache, ProfilingLogger.Logger, dbContext.SqlSyntax, UmbracoConfig.For.UmbracoSettings()),
                 new PetaPocoUnitOfWorkProvider(dbFactory),
@@ -105,10 +107,10 @@ namespace Umbraco.Web
         public override IBootManager Initialize()
         {
              //This is basically a hack for this item: http://issues.umbraco.org/issue/U4-5976
-            // when Examine initializes it will try to rebuild if the indexes are empty, however in many cases not all of Examine's
-            // event handlers will be assigned during bootup when the rebuilding starts which is a problem. So with the examine 0.1.58.2941 build
-            // it has an event we can subscribe to in order to cancel this rebuilding process, but what we'll do is cancel it and postpone the rebuilding until the
-            // boot process has completed. It's a hack but it works.
+             // when Examine initializes it will try to rebuild if the indexes are empty, however in many cases not all of Examine's
+             // event handlers will be assigned during bootup when the rebuilding starts which is a problem. So with the examine 0.1.58.2941 build
+             // it has an event we can subscribe to in order to cancel this rebuilding process, but what we'll do is cancel it and postpone the rebuilding until the
+             // boot process has completed. It's a hack but it works.
             ExamineManager.Instance.BuildingEmptyIndexOnStartup += OnInstanceOnBuildingEmptyIndexOnStartup;
 
             base.Initialize();
@@ -134,7 +136,7 @@ namespace Umbraco.Web
             ViewEngines.Engines.Add(new PluginViewEngine());
 
             //set model binder
-            ModelBinders.Binders.Add(new KeyValuePair<Type, IModelBinder>(typeof(RenderModel), new RenderModelBinder()));
+            ModelBinderProviders.BinderProviders.Add(new RenderModelBinder()); // is a provider
 
             ////add the profiling action filter
             //GlobalFilters.Filters.Add(new ProfilingActionFilter());
@@ -196,6 +198,9 @@ namespace Umbraco.Web
             //Wrap viewengines in the profiling engine
             WrapViewEngines(ViewEngines.Engines);
 
+            //add global filters
+            ConfigureGlobalFilters();
+
             //set routes
             CreateRoutes();
 
@@ -222,6 +227,11 @@ namespace Umbraco.Web
             return this;
         }
 
+        internal static void ConfigureGlobalFilters()
+        {
+            GlobalFilters.Filters.Add(new EnsurePartialViewMacroViewContextFilterAttribute());
+        }
+
         internal static void WrapViewEngines(IList<IViewEngine> viewEngines)
         {
             if (viewEngines == null || viewEngines.Count == 0) return;
@@ -246,8 +256,8 @@ namespace Umbraco.Web
                 //all entities are cached properly (cloned in and cloned out)
                 new DeepCloneRuntimeCacheProvider(new HttpRuntimeCacheProvider(HttpRuntime.Cache)),
                 new StaticCacheProvider(),
-                //we have no request based cache when not running in web-based context
-                new NullCacheProvider(),
+                //we need request based cache when running in web-based context
+                new HttpRequestCacheProvider(),
                 new IsolatedRuntimeCache(type =>
                     //we need to have the dep clone runtime cache provider to ensure
                     //all entities are cached properly (cloned in and cloned out)
@@ -360,7 +370,9 @@ namespace Umbraco.Web
         {
             base.InitializeResolvers();
 
-            XsltExtensionsResolver.Current = new XsltExtensionsResolver(ServiceProvider, LoggerResolver.Current.Logger, () => PluginManager.Current.ResolveXsltExtensions());
+            XsltExtensionsResolver.Current = new XsltExtensionsResolver(ServiceProvider, LoggerResolver.Current.Logger, () => PluginManager.ResolveXsltExtensions());
+
+            EditorValidationResolver.Current= new EditorValidationResolver(ServiceProvider, LoggerResolver.Current.Logger, () => PluginManager.ResolveTypes<IEditorValidator>());
 
             //set the default RenderMvcController
             DefaultRenderMvcControllerResolver.Current = new DefaultRenderMvcControllerResolver(typeof(RenderMvcController));
@@ -439,11 +451,11 @@ namespace Umbraco.Web
 
             SurfaceControllerResolver.Current = new SurfaceControllerResolver(
                 ServiceProvider, LoggerResolver.Current.Logger,
-                PluginManager.Current.ResolveSurfaceControllers());
+                PluginManager.ResolveSurfaceControllers());
 
             UmbracoApiControllerResolver.Current = new UmbracoApiControllerResolver(
                 ServiceProvider, LoggerResolver.Current.Logger,
-                PluginManager.Current.ResolveUmbracoApiControllers());
+                PluginManager.ResolveUmbracoApiControllers());
 
             // both TinyMceValueConverter (in Core) and RteMacroRenderingValueConverter (in Web) will be
             // discovered when CoreBootManager configures the converters. We HAVE to remove one of them
@@ -454,6 +466,7 @@ namespace Umbraco.Web
             // same for other converters
             PropertyValueConvertersResolver.Current.RemoveType<Core.PropertyEditors.ValueConverters.TextStringValueConverter>();
             PropertyValueConvertersResolver.Current.RemoveType<Core.PropertyEditors.ValueConverters.MarkdownEditorValueConverter>();
+            PropertyValueConvertersResolver.Current.RemoveType<Core.PropertyEditors.ValueConverters.ImageCropperValueConverter>();
 
             PublishedCachesResolver.Current = new PublishedCachesResolver(new PublishedCaches(
                 new PublishedCache.XmlPublishedCache.PublishedContentCache(),
@@ -512,11 +525,11 @@ namespace Umbraco.Web
 
             ThumbnailProvidersResolver.Current = new ThumbnailProvidersResolver(
                 ServiceProvider, LoggerResolver.Current.Logger,
-                PluginManager.Current.ResolveThumbnailProviders());
+                PluginManager.ResolveThumbnailProviders());
 
             ImageUrlProviderResolver.Current = new ImageUrlProviderResolver(
                 ServiceProvider, LoggerResolver.Current.Logger,
-                PluginManager.Current.ResolveImageUrlProviders());
+                PluginManager.ResolveImageUrlProviders());
 
             CultureDictionaryFactoryResolver.Current = new CultureDictionaryFactoryResolver(
                 new DefaultCultureDictionaryFactory());
@@ -546,9 +559,6 @@ namespace Umbraco.Web
             // return
             foreach (var index in indexes)
                 yield return index;
-
-            // and clear
-            IndexesToRebuild.Clear();
         }
 
 
@@ -561,3 +571,4 @@ namespace Umbraco.Web
         }
     }
 }
+
