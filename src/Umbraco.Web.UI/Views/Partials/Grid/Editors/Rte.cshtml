@@ -2,7 +2,7 @@
 @using Umbraco.Web.Templates
 @using System.Text.RegularExpressions
 @{ 
-    Regex FixMacroMarkup = new Regex("<div[^>]+umb-macro-holder[^>]+><!-- | --><ins>Macro alias.*?<\\/div>");
+    Regex FixMacroMarkup = new Regex("<div[^>]+umb-macro-holder[^>]+><!-- | --><ins>Macro alias.*?<\\/ins><\\/div>| --><ins>.*?<\\/ins><\\/div>", RegexOptions.Singleline);
 }
 @Html.Raw(
     TemplateUtilities.ParseAndRenderMacros(
