@@ -5,16 +5,17 @@ using System.Runtime.CompilerServices;
 using System.Threading;
 using Umbraco.Core;
 using Umbraco.Core.Cache;
-using Umbraco.Core.Persistence.Caching;
+using Umbraco.Core.Models;
+
 using umbraco.BusinessLogic;
 using umbraco.cms.businesslogic.cache;
-using umbraco.cms.businesslogic.datatype;
-using umbraco.cms.businesslogic.language;
 using umbraco.cms.businesslogic.property;
 using umbraco.cms.businesslogic.web;
 using umbraco.cms.helpers;
 using umbraco.DataLayer;
 using umbraco.interfaces;
+using DataTypeDefinition = umbraco.cms.businesslogic.datatype.DataTypeDefinition;
+using Language = umbraco.cms.businesslogic.language.Language;
 
 namespace umbraco.cms.businesslogic.propertytype
 {
@@ -302,7 +303,7 @@ namespace umbraco.cms.businesslogic.propertytype
             finally
             {
                 // Clear cached items
-                ApplicationContext.Current.ApplicationCache.ClearCacheByKeySearch(CacheKeys.PropertyTypeCacheKey);
+                ApplicationContext.Current.ApplicationCache.RuntimeCache.ClearCacheByKeySearch(CacheKeys.PropertyTypeCacheKey);
             }
 
             return pt;
@@ -457,38 +458,42 @@ namespace umbraco.cms.businesslogic.propertytype
         protected virtual void FlushCache()
         {
             // clear local cache
-            ApplicationContext.Current.ApplicationCache.ClearCacheItem(GetCacheKey(Id));
+            ApplicationContext.Current.ApplicationCache.RuntimeCache.ClearCacheItem(GetCacheKey(Id));
 
             // clear cache in contentype
-            ApplicationContext.Current.ApplicationCache.ClearCacheItem(CacheKeys.ContentTypePropertiesCacheKey + _contenttypeid);
+            ApplicationContext.Current.ApplicationCache.RuntimeCache.ClearCacheItem(CacheKeys.ContentTypePropertiesCacheKey + _contenttypeid);
 
             //Ensure that DocumentTypes are reloaded from db by clearing cache - this similar to the Save method on DocumentType.
             //NOTE Would be nice if we could clear cache by type instead of emptying the entire cache.
-            InMemoryCacheProvider.Current.Clear();
-            RuntimeCacheProvider.Current.Clear();
+            ApplicationContext.Current.ApplicationCache.IsolatedRuntimeCache.ClearCache<IContent>();
+            ApplicationContext.Current.ApplicationCache.IsolatedRuntimeCache.ClearCache<IContentType>();
+            ApplicationContext.Current.ApplicationCache.IsolatedRuntimeCache.ClearCache<IMedia>();
+            ApplicationContext.Current.ApplicationCache.IsolatedRuntimeCache.ClearCache<IMediaType>();
+            ApplicationContext.Current.ApplicationCache.IsolatedRuntimeCache.ClearCache<IMember>();
+            ApplicationContext.Current.ApplicationCache.IsolatedRuntimeCache.ClearCache<IMemberType>();
         }
 
         public static PropertyType GetPropertyType(int id)
         {
-            return ApplicationContext.Current.ApplicationCache.GetCacheItem(
+            return ApplicationContext.Current.ApplicationCache.RuntimeCache.GetCacheItem<PropertyType>(
                 GetCacheKey(id),
-                TimeSpan.FromMinutes(30),
-                delegate
+                timeout:        TimeSpan.FromMinutes(30),
+                getCacheItem: () =>
+                {
+                    try
                     {
-                        try
-                        {
-                            return new PropertyType(id);
-                        }
-                        catch
-                        {
-                            return null;
-                        }
-                    });
+                        return new PropertyType(id);
+                    }
+                    catch
+                    {
+                        return null;
+                    }
+                });
         }
 
         private void InvalidateCache()
         {
-            ApplicationContext.Current.ApplicationCache.ClearCacheItem(GetCacheKey(Id));
+            ApplicationContext.Current.ApplicationCache.RuntimeCache.ClearCacheItem(GetCacheKey(Id));
         }
 
         private static string GetCacheKey(int id)

@@ -2,7 +2,12 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using Moq;
 using NUnit.Framework;
+using Umbraco.Core;
+using Umbraco.Core.Configuration.UmbracoSettings;
+using Umbraco.Core.IO;
+using Umbraco.Core.Logging;
 using Umbraco.Core.Models;
 using Umbraco.Core.Models.Membership;
 using Umbraco.Core.Models.Rdbms;
@@ -38,6 +43,27 @@ namespace Umbraco.Tests.Services
 
         //TODO Add test to verify there is only ONE newest document/content in cmsDocument table after updating.
         //TODO Add test to delete specific version (with and without deleting prior versions) and versions by date.
+
+        [Test]
+        public void Remove_Scheduled_Publishing_Date()
+        {
+            // Arrange
+            var contentService = ServiceContext.ContentService;
+
+            // Act
+            var content = contentService.CreateContentWithIdentity("Test", -1, "umbTextpage", 0);
+
+            content.ReleaseDate = DateTime.Now.AddHours(2);
+            contentService.Save(content, 0);
+
+            content = contentService.GetById(content.Id);
+            content.ReleaseDate = null;
+            contentService.Save(content, 0);
+
+
+            // Assert
+            Assert.IsTrue(contentService.PublishWithStatus(content).Success);
+        }
 
         [Test]
         public void Count_All()
@@ -113,6 +139,20 @@ namespace Umbraco.Tests.Services
 
             // Assert
             Assert.AreEqual(20, contentService.CountDescendants(parent.Id));
+        }
+
+        [Test]
+        public void GetAncestors_Returns_Empty_List_When_Path_Is_Null()
+        {
+            // Arrange
+            var contentService = ServiceContext.ContentService;
+
+            // Act
+            var current = new Mock<IContent>();
+            var res = contentService.GetAncestors(current.Object);
+
+            // Assert
+            Assert.IsEmpty(res);
         }
 
         [Test]
@@ -705,12 +745,9 @@ namespace Umbraco.Tests.Services
             var content = contentService.GetById(NodeDto.NodeIdSeed + 1);
             bool published = contentService.Publish(content, 0);
 
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var uow = provider.GetUnitOfWork();
-            using (RepositoryResolver.Current.ResolveByType<IContentRepository>(uow))
-            {
-                Assert.IsTrue(uow.Database.Exists<ContentXmlDto>(content.Id));
-            }
+            Assert.IsTrue(uow.Database.Exists<ContentXmlDto>(content.Id));
 
             // Act
             bool unpublished = contentService.UnPublish(content, 0);
@@ -721,10 +758,7 @@ namespace Umbraco.Tests.Services
             Assert.That(content.Published, Is.False);
 
             uow = provider.GetUnitOfWork();
-            using (RepositoryResolver.Current.ResolveByType<IContentRepository>(uow))
-            {
-                Assert.IsFalse(uow.Database.Exists<ContentXmlDto>(content.Id));
-            }
+            Assert.IsFalse(uow.Database.Exists<ContentXmlDto>(content.Id));
         }
 
         /// <summary>
@@ -773,12 +807,13 @@ namespace Umbraco.Tests.Services
             }
             var allContent = rootContent.Concat(rootContent.SelectMany(x => x.Descendants()));
             //for testing we need to clear out the contentXml table so we can see if it worked
-            var provider = new PetaPocoUnitOfWorkProvider();
-            var uow =  provider.GetUnitOfWork();
-            using (RepositoryResolver.Current.ResolveByType<IContentRepository>(uow))
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
+            using (var uow = provider.GetUnitOfWork())
             {
-                uow.Database.TruncateTable("cmsContentXml");
+                uow.Database.TruncateTable("cmsContentXml");    
             }
+            
+
             //for this test we are also going to save a revision for a content item that is not published, this is to ensure
             //that it's published version still makes it into the cmsContentXml table!
             contentService.Save(allContent.Last());
@@ -788,10 +823,9 @@ namespace Umbraco.Tests.Services
 
             // Assert
             Assert.IsTrue(published);
-            uow = provider.GetUnitOfWork();
-            using (var repo = RepositoryResolver.Current.ResolveByType<IContentRepository>(uow))
+            using (var uow = provider.GetUnitOfWork())
             {
-                Assert.AreEqual(allContent.Count(), uow.Database.ExecuteScalar<int>("select count(*) from cmsContentXml"));
+                Assert.AreEqual(allContent.Count(), uow.Database.ExecuteScalar<int>("select count(*) from cmsContentXml"));    
             }
         }
 
@@ -807,9 +841,9 @@ namespace Umbraco.Tests.Services
             }
             var allContent = rootContent.Concat(rootContent.SelectMany(x => x.Descendants())).ToList();
             //for testing we need to clear out the contentXml table so we can see if it worked
-            var provider = new PetaPocoUnitOfWorkProvider();
-            var uow = provider.GetUnitOfWork();
-            using (RepositoryResolver.Current.ResolveByType<IContentRepository>(uow))
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
+            
+            using (var uow = provider.GetUnitOfWork())
             {
                 uow.Database.TruncateTable("cmsContentXml");
             }
@@ -821,8 +855,7 @@ namespace Umbraco.Tests.Services
             contentService.RePublishAll(new int[]{allContent.Last().ContentTypeId});
 
             // Assert            
-            uow = provider.GetUnitOfWork();
-            using (var repo = RepositoryResolver.Current.ResolveByType<IContentRepository>(uow))
+            using (var uow = provider.GetUnitOfWork())
             {
                 Assert.AreEqual(allContent.Count(), uow.Database.ExecuteScalar<int>("select count(*) from cmsContentXml"));
             }
@@ -1202,6 +1235,52 @@ namespace Umbraco.Tests.Services
         }
 
         [Test]
+        public void Can_Copy_Recursive()
+        {
+            // Arrange
+            var contentService = ServiceContext.ContentService;
+            var temp = contentService.GetById(NodeDto.NodeIdSeed + 1);
+            Assert.AreEqual("Home", temp.Name);
+            Assert.AreEqual(2, temp.Children().Count());
+
+            // Act
+            var copy = contentService.Copy(temp, temp.ParentId, false, true, 0);
+            var content = contentService.GetById(NodeDto.NodeIdSeed + 1);
+
+            // Assert
+            Assert.That(copy, Is.Not.Null);
+            Assert.That(copy.Id, Is.Not.EqualTo(content.Id));
+            Assert.AreNotSame(content, copy);
+            Assert.AreEqual(2, copy.Children().Count());
+
+            var child = contentService.GetById(NodeDto.NodeIdSeed + 2);
+            var childCopy = copy.Children().First();
+            Assert.AreEqual(childCopy.Name, child.Name);
+            Assert.AreNotEqual(childCopy.Id, child.Id);
+            Assert.AreNotEqual(childCopy.Key, child.Key);
+        }
+
+        [Test]
+        public void Can_Copy_NonRecursive()
+        {
+            // Arrange
+            var contentService = ServiceContext.ContentService;
+            var temp = contentService.GetById(NodeDto.NodeIdSeed + 1);
+            Assert.AreEqual("Home", temp.Name);
+            Assert.AreEqual(2, temp.Children().Count());
+
+            // Act
+            var copy = contentService.Copy(temp, temp.ParentId, false, false, 0);
+            var content = contentService.GetById(NodeDto.NodeIdSeed + 1);
+
+            // Assert
+            Assert.That(copy, Is.Not.Null);
+            Assert.That(copy.Id, Is.Not.EqualTo(content.Id));
+            Assert.AreNotSame(content, copy);
+            Assert.AreEqual(0, copy.Children().Count());
+        }
+
+        [Test]
         public void Can_Copy_Content_With_Tags()
         {
             // Arrange
@@ -1253,7 +1332,7 @@ namespace Umbraco.Tests.Services
         [Test]
         public void Can_Save_Lazy_Content()
         {	        
-	        var unitOfWork = PetaPocoUnitOfWorkProvider.CreateUnitOfWork();
+	        var unitOfWork = PetaPocoUnitOfWorkProvider.CreateUnitOfWork(Mock.Of<ILogger>());
             var contentType = ServiceContext.ContentTypeService.GetContentType("umbTextpage");
             var root = ServiceContext.ContentService.GetById(NodeDto.NodeIdSeed + 1);
 
@@ -1261,21 +1340,25 @@ namespace Umbraco.Tests.Services
             var c2 = new Lazy<IContent>(() => MockedContent.CreateSimpleContent(contentType, "Hierarchy Simple Text Subpage", c.Value.Id));
             var list = new List<Lazy<IContent>> {c, c2};
 
-            var repository = RepositoryResolver.Current.ResolveByType<IContentRepository>(unitOfWork);
-            foreach (var content in list)
+            ContentTypeRepository contentTypeRepository;
+            using (var repository = CreateRepository(unitOfWork, out contentTypeRepository))
             {
-                repository.AddOrUpdate(content.Value);
-                unitOfWork.Commit();
+                foreach (var content in list)
+                {
+                    repository.AddOrUpdate(content.Value);
+                    unitOfWork.Commit();
+                }
+
+                Assert.That(c.Value.HasIdentity, Is.True);
+                Assert.That(c2.Value.HasIdentity, Is.True);
+
+                Assert.That(c.Value.Id > 0, Is.True);
+                Assert.That(c2.Value.Id > 0, Is.True);
+
+                Assert.That(c.Value.ParentId > 0, Is.True);
+                Assert.That(c2.Value.ParentId > 0, Is.True);    
             }
-
-            Assert.That(c.Value.HasIdentity, Is.True);
-            Assert.That(c2.Value.HasIdentity, Is.True);
-
-            Assert.That(c.Value.Id > 0, Is.True);
-            Assert.That(c2.Value.Id > 0, Is.True);
-
-            Assert.That(c.Value.ParentId > 0, Is.True);
-            Assert.That(c2.Value.ParentId > 0, Is.True);
+            
         }
 
         [Test]
@@ -1325,7 +1408,8 @@ namespace Umbraco.Tests.Services
             //MCH: I'm guessing this is an issue because of the format the date is actually stored as, right? Cause we don't do any formatting when saving or loading
             Assert.That(sut.GetValue<DateTime>("dateTime").ToString("G"), Is.EqualTo(content.GetValue<DateTime>("dateTime").ToString("G")));
             Assert.That(sut.GetValue<string>("colorPicker"), Is.EqualTo("black"));
-	        Assert.That(sut.GetValue<string>("folderBrowser"), Is.Null);
+            //that one is gone in 7.4
+	        //Assert.That(sut.GetValue<string>("folderBrowser"), Is.Null);
             Assert.That(sut.GetValue<string>("ddlMultiple"), Is.EqualTo("1234,1235"));
             Assert.That(sut.GetValue<string>("rbList"), Is.EqualTo("random"));
             Assert.That(sut.GetValue<DateTime>("date").ToString("G"), Is.EqualTo(content.GetValue<DateTime>("date").ToString("G")));
@@ -1363,17 +1447,16 @@ namespace Umbraco.Tests.Services
 
             contentService.Save(content);
 
-            var provider = new PetaPocoUnitOfWorkProvider();
-            var uow = provider.GetUnitOfWork();
-            using (RepositoryResolver.Current.ResolveByType<IContentRepository>(uow))
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
+
+            using (var uow = provider.GetUnitOfWork())
             {
                 Assert.IsFalse(uow.Database.Exists<ContentXmlDto>(content.Id));
             }
 
             contentService.Publish(content);
             
-            uow = provider.GetUnitOfWork();
-            using (RepositoryResolver.Current.ResolveByType<IContentRepository>(uow))
+            using (var uow = provider.GetUnitOfWork())
             {
                 Assert.IsTrue(uow.Database.Exists<ContentXmlDto>(content.Id));
             }
@@ -1388,12 +1471,106 @@ namespace Umbraco.Tests.Services
 
             contentService.Save(content);
 
-            var provider = new PetaPocoUnitOfWorkProvider();
-            var uow = provider.GetUnitOfWork();
-            using (RepositoryResolver.Current.ResolveByType<IContentRepository>(uow))
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
+            
+            using (var uow = provider.GetUnitOfWork())
             {
                 Assert.IsTrue(uow.Database.SingleOrDefault<PreviewXmlDto>("WHERE nodeId=@nodeId AND versionId = @versionId", new{nodeId = content.Id, versionId = content.Version}) != null);
             }
+        }
+
+        [Test]
+        public void Created_HasPublishedVersion_Not()
+        {
+            var contentService = ServiceContext.ContentService;
+            var content = contentService.CreateContent("Home US", -1, "umbTextpage", 0);
+            content.SetValue("author", "Barack Obama");
+
+            contentService.Save(content);
+
+            Assert.IsTrue(content.HasIdentity);
+            Assert.IsFalse(content.HasPublishedVersion);
+
+            content = contentService.GetById(content.Id);
+            Assert.IsFalse(content.HasPublishedVersion);
+        }
+
+        [Test]
+        public void Published_HasPublishedVersion_Self()
+        {
+            var contentService = ServiceContext.ContentService;
+            var content = contentService.CreateContent("Home US", -1, "umbTextpage", 0);
+            content.SetValue("author", "Barack Obama");
+
+            contentService.SaveAndPublishWithStatus(content);
+
+            Assert.IsTrue(content.HasIdentity);
+            Assert.IsTrue(content.HasPublishedVersion);
+            Assert.AreEqual(content.PublishedVersionGuid, content.Version);
+
+            content = contentService.GetById(content.Id);
+            Assert.IsTrue(content.HasPublishedVersion);
+            Assert.AreEqual(content.PublishedVersionGuid, content.Version);
+        }
+
+        [Test]
+        public void PublishedWithChanges_HasPublishedVersion_Other()
+        {
+            var contentService = ServiceContext.ContentService;
+            var content = contentService.CreateContent("Home US", -1, "umbTextpage", 0);
+            content.SetValue("author", "Barack Obama");
+
+            contentService.SaveAndPublishWithStatus(content);
+            content.SetValue("author", "James Dean");
+            contentService.Save(content);
+
+            Assert.IsTrue(content.HasIdentity);
+            Assert.IsTrue(content.HasPublishedVersion);
+            Assert.AreNotEqual(content.PublishedVersionGuid, content.Version);
+
+            content = contentService.GetById(content.Id);
+            Assert.IsFalse(content.Published);
+            Assert.IsTrue(content.HasPublishedVersion);
+            Assert.AreNotEqual(content.PublishedVersionGuid, content.Version);
+
+            var published = contentService.GetPublishedVersion(content);
+            Assert.IsTrue(published.Published);
+            Assert.IsTrue(published.HasPublishedVersion);
+            Assert.AreEqual(published.PublishedVersionGuid, published.Version);
+        }
+
+        [Test]
+        public void Unpublished_HasPublishedVersion_Not()
+        {
+            var contentService = ServiceContext.ContentService;
+            var content = contentService.CreateContent("Home US", -1, "umbTextpage", 0);
+            content.SetValue("author", "Barack Obama");
+
+            contentService.SaveAndPublishWithStatus(content);
+            contentService.UnPublish(content);
+
+            Assert.IsTrue(content.HasIdentity);
+            Assert.IsFalse(content.HasPublishedVersion);
+
+            content = contentService.GetById(content.Id);
+            Assert.IsFalse(content.HasPublishedVersion);
+        }
+
+        [Test]
+        public void HasPublishedVersion_Method()
+        {
+            var contentService = ServiceContext.ContentService;
+            var content = contentService.CreateContent("Home US", -1, "umbTextpage", 0);
+            content.SetValue("author", "Barack Obama");
+
+            contentService.Save(content);
+            Assert.IsTrue(content.HasIdentity);
+            Assert.IsFalse(content.HasPublishedVersion);
+            Assert.IsFalse(content.HasPublishedVersion());
+
+            contentService.SaveAndPublishWithStatus(content);
+            Assert.IsTrue(content.HasPublishedVersion);
+            Assert.IsTrue(content.HasPublishedVersion());
         }
 
         private IEnumerable<IContent> CreateContentHierarchy()
@@ -1427,6 +1604,15 @@ namespace Umbraco.Tests.Services
                 Console.WriteLine("Created: 'Hierarchy Simple Text Subpage {0}' - Depth: {1}", i, depth);
             }
             return list;
+        }
+
+        private ContentRepository CreateRepository(IDatabaseUnitOfWork unitOfWork, out ContentTypeRepository contentTypeRepository)
+        {
+            var templateRepository = new TemplateRepository(unitOfWork, CacheHelper.CreateDisabledCacheHelper(), Mock.Of<ILogger>(), SqlSyntax, Mock.Of<IFileSystem>(), Mock.Of<IFileSystem>(), Mock.Of<ITemplatesSection>());
+            var tagRepository = new TagRepository(unitOfWork, CacheHelper.CreateDisabledCacheHelper(), Mock.Of<ILogger>(), SqlSyntax);
+            contentTypeRepository = new ContentTypeRepository(unitOfWork, CacheHelper.CreateDisabledCacheHelper(), Mock.Of<ILogger>(), SqlSyntax, templateRepository);
+            var repository = new ContentRepository(unitOfWork, CacheHelper.CreateDisabledCacheHelper(), Mock.Of<ILogger>(), SqlSyntax, contentTypeRepository, templateRepository, tagRepository, Mock.Of<IContentSection>());
+            return repository;
         }
     }
 }

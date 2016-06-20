@@ -26,9 +26,6 @@ namespace Umbraco.Core.Models.Rdbms
         [Column("Name")]
         public string Name { get; set; }
 
-        [Column("helpText")]
-        public string HelpText { get; set; }
-
         [Column("PropertyTypeSortOrder")]
         public int SortOrder { get; set; }
 
@@ -54,5 +51,8 @@ namespace Umbraco.Core.Models.Rdbms
 
         [Column("dbType")]
         public string DbType { get; set; }
+
+        [Column("UniqueID")]        
+        public Guid UniqueId { get; set; }
     }
 }

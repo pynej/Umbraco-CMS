@@ -24,9 +24,10 @@ namespace Umbraco.Web.Scheduling
             _settings = settings;
         }
 
+        // maximum age, in minutes
         private static int GetLogScrubbingMaximumAge(IUmbracoSettingsSection settings)
         {
-            int maximumAge = 24 * 60 * 60;
+            var maximumAge = 24 * 60; // 24 hours, in minutes
             try
             {
                 if (settings.Logging.MaxLogAge > -1)
@@ -59,10 +60,14 @@ namespace Umbraco.Web.Scheduling
         {
             if (_appContext == null) return true; // repeat...
 
-            if (ServerEnvironmentHelper.GetStatus(_settings) == CurrentServerEnvironmentStatus.Slave)
+            switch (_appContext.GetCurrentServerRole())
             {
-                LogHelper.Debug<LogScrubber>("Does not run on slave servers.");
-                return false; // do NOT repeat, server status comes from config and will NOT change
+                case ServerRole.Slave:
+                    LogHelper.Debug<LogScrubber>("Does not run on slave servers.");
+                    return true; // DO repeat, server role can change
+                case ServerRole.Unknown:
+                    LogHelper.Debug<LogScrubber>("Does not run on servers with unknown role.");
+                    return true; // DO repeat, server role can change
             }
 
             // ensure we do not run if not main domain, but do NOT lock it

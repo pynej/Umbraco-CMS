@@ -3,12 +3,16 @@ using System.IO;
 using System.Web.Caching;
 using System.Web.UI;
 using System.Web.UI.WebControls;
+using Moq;
 using NUnit.Framework;
 using Umbraco.Core;
 using Umbraco.Core.Cache;
+using Umbraco.Core.Logging;
 using Umbraco.Core.Profiling;
 using umbraco;
 using umbraco.cms.businesslogic.macro;
+using Umbraco.Core.Configuration;
+using Umbraco.Tests.TestHelpers;
 
 namespace Umbraco.Tests.Macros
 {
@@ -23,20 +27,17 @@ namespace Umbraco.Tests.Macros
             var cacheHelper = new CacheHelper(
                 new ObjectCacheRuntimeCacheProvider(),
                 new StaticCacheProvider(),
-                new NullCacheProvider());
-            ApplicationContext.Current = new ApplicationContext(cacheHelper);
-            ProfilerResolver.Current = new ProfilerResolver(new LogProfiler())
-            {
-                CanResolveBeforeFrozen = true
-            };
+                new NullCacheProvider(),
+                new IsolatedRuntimeCache(type => new ObjectCacheRuntimeCacheProvider()));
+            ApplicationContext.Current = new ApplicationContext(cacheHelper, new ProfilingLogger(Mock.Of<ILogger>(), Mock.Of<IProfiler>()));
+
+            UmbracoConfig.For.SetUmbracoSettings(SettingsForTests.GetDefault());
         }
 
         [TearDown]
         public void TearDown()
         {
-            ProfilerResolver.Current.DisposeIfDisposable();
-            ProfilerResolver.Reset();
-            ApplicationContext.Current.ApplicationCache.ClearAllCache();
+            ApplicationContext.Current.ApplicationCache.RuntimeCache.ClearAllCache();
             ApplicationContext.Current.DisposeIfDisposable();
             ApplicationContext.Current = null;
         }
@@ -136,11 +137,11 @@ namespace Umbraco.Tests.Macros
         public void Macro_Needs_Removing_Based_On_Macro_File(int minutesToNow, bool expectedResult)
         {
             var now = DateTime.Now;
-            ApplicationContext.Current.ApplicationCache.InsertCacheItem(
+            ApplicationContext.Current.ApplicationCache.RuntimeCache.InsertCacheItem(
                 "TestDate",
-                CacheItemPriority.NotRemovable,
-                new TimeSpan(0, 0, 60),
-                () => now.AddMinutes(minutesToNow)); //add a datetime value of 'now' with the minutes offset
+                priority:       CacheItemPriority.NotRemovable,
+                timeout:        new TimeSpan(0, 0, 60),
+                getCacheItem:   () => now.AddMinutes(minutesToNow)); //add a datetime value of 'now' with the minutes offset
 
             //now we need to update a file's date to 'now' to compare
             var path = Path.Combine(TestHelpers.TestHelper.CurrentAssemblyDirectory, "temp.txt");

@@ -43,7 +43,7 @@
 			public const string Users = "users";
 
             /// <summary>
-            /// Application alias for the users section.
+            /// Application alias for the forms section.
             /// </summary>
             public const string Forms = "forms";
 		}
@@ -59,7 +59,7 @@
             public const string Content = "content";
 
             /// <summary>
-            /// alias for the media tree.
+            /// alias for the member tree.
             /// </summary>
             public const string Members = "member";
 
@@ -71,19 +71,35 @@
             /// <summary>
             /// alias for the datatype tree.
             /// </summary>
-			public const string DataTypes = "datatype";
+			public const string DataTypes = "dataTypes";
 
 			/// <summary>
 			/// alias for the dictionary tree.
 			/// </summary>
 			public const string Dictionary = "dictionary";
 
-            //TODO: Fill in the rest!
+            public const string Stylesheets = "stylesheets";
 
             /// <summary>
-            /// alias for the media tree.
+            /// alias for the document type tree.
             /// </summary>
-            public const string Templates = "template";
+            public const string DocumentTypes = "documentTypes";
+
+            /// <summary>
+            /// alias for the media type tree.
+            /// </summary>
+            public const string MediaTypes = "mediaTypes";
+
+
+            /// <summary>
+            /// alias for the member type tree.
+            /// </summary>
+            public const string MemberTypes = "memberTypes";
+
+            /// <summary>
+            /// alias for the template tree.
+            /// </summary>
+            public const string Templates = "templates";
 
             public const string RelationTypes = "relationTypes";
 
@@ -91,6 +107,7 @@
 
             public const string Languages = "languages";
 
+            //TODO: Fill in the rest!
         }
 	}
 

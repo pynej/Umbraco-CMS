@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Security;
 using System.Web;
+using System.Web.Compilation;
 using Examine;
 using Examine.LuceneEngine.Config;
 using Examine.Providers;
@@ -15,6 +16,7 @@ using Examine.LuceneEngine;
 using Examine.LuceneEngine.Providers;
 using Examine.LuceneEngine.SearchCriteria;
 using Lucene.Net.Analysis;
+using Umbraco.Core.Logging;
 using UmbracoExamine.LocalStorage;
 
 
@@ -78,10 +80,31 @@ namespace UmbracoExamine
                 var attemptUseTempStorage = config["useTempStorage"].TryConvertTo<LocalStorageType>();
                 if (attemptUseTempStorage)
                 {
+                    //this is the default
+                    ILocalStorageDirectory localStorageDir = new CodeGenLocalStorageDirectory();
+                    if (config["tempStorageDirectory"] != null)
+                    {
+                        //try to get the type
+                        var dirType = BuildManager.GetType(config["tempStorageDirectory"], false);
+                        if (dirType != null)
+                        {
+                            try
+                            {
+                                localStorageDir = (ILocalStorageDirectory)Activator.CreateInstance(dirType);
+                            }
+                            catch (Exception ex)
+                            {
+                                LogHelper.Error<UmbracoExamineSearcher>(
+                                    string.Format("Could not create a temp storage location of type {0}, reverting to use the " + typeof(CodeGenLocalStorageDirectory).FullName, dirType),
+                                    ex);
+                            }
+                        }
+                    }
                     var indexSet = IndexSets.Instance.Sets[IndexSetName];
                     var configuredPath = indexSet.IndexPath;
-                    var codegenPath = HttpRuntime.CodegenDir;
-                    _localTempPath = Path.Combine(codegenPath, configuredPath.TrimStart('~', '/').Replace("/", "\\"));
+                    var tempPath = localStorageDir.GetLocalStorageDirectory(config, configuredPath);
+                    if (tempPath == null) throw new InvalidOperationException("Could not resolve a temp location from the " + localStorageDir.GetType() + " specified");
+                    _localTempPath = tempPath.FullName;
                     _localStorageType = attemptUseTempStorage.Result;
                 }
             }
@@ -168,7 +191,7 @@ namespace UmbracoExamine
             var directory = GetLuceneDirectory();
             return IndexReader.Open(
                 directory, 
-                DeletePolicyTracker.Current.GetPolicy(directory), 
+                //DeletePolicyTracker.Current.GetPolicy(directory), 
                 true);
         }
 
@@ -187,9 +210,17 @@ namespace UmbracoExamine
                         switch (_localStorageType)
                         {
                             case LocalStorageType.Sync:
-                                _localTempDirectory = LocalTempStorageDirectoryTracker.Current.GetDirectory(
-                                    new DirectoryInfo(_localTempPath),
-                                    base.GetLuceneDirectory());
+                                var fsDir = base.GetLuceneDirectory() as FSDirectory;
+                                if (fsDir != null)
+                                {
+                                    _localTempDirectory = LocalTempStorageDirectoryTracker.Current.GetDirectory(
+                                        new DirectoryInfo(_localTempPath),
+                                        fsDir);
+                                }
+                                else
+                                {
+                                    return base.GetLuceneDirectory();
+                                }
                                 break;
                             case LocalStorageType.LocalOnly:
                                 _localTempDirectory = DirectoryTracker.Current.GetDirectory(new DirectoryInfo(_localTempPath));

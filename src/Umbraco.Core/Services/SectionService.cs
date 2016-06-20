@@ -171,7 +171,7 @@ namespace Umbraco.Core.Services
 
                         //remove the cache so it gets re-read ... SD: I'm leaving this here even though it
                         // is taken care of by events as well, I think unit tests may rely on it being cleared here.
-                        _cache.ClearCacheItem(CacheKeys.ApplicationsCacheKey);
+                        _cache.RuntimeCache.ClearCacheItem(CacheKeys.ApplicationsCacheKey);
                     }
                 }
             }
@@ -210,7 +210,6 @@ namespace Umbraco.Core.Services
         /// <param name="name">The application name.</param>
         /// <param name="alias">The application alias.</param>
         /// <param name="icon">The application icon, which has to be located in umbraco/images/tray folder.</param>
-        [MethodImpl(MethodImplOptions.Synchronized)]
         public void MakeNew(string name, string alias, string icon)
         {
             MakeNew(name, alias, icon, GetSections().Max(x => x.SortOrder) + 1);
@@ -223,7 +222,6 @@ namespace Umbraco.Core.Services
         /// <param name="alias">The alias.</param>
         /// <param name="icon">The icon.</param>
         /// <param name="sortOrder">The sort order.</param>
-        [MethodImpl(MethodImplOptions.Synchronized)]
         public void MakeNew(string name, string alias, string icon, int sortOrder)
         {            
             if (GetSections().All(x => x.Alias != alias))

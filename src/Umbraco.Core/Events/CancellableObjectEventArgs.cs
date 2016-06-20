@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Security.Permissions;
 using Umbraco.Core.Models;
 using Umbraco.Core.Models.EntityBase;
@@ -11,8 +12,24 @@ namespace Umbraco.Core.Events
 	[HostProtection(SecurityAction.LinkDemand, SharedState = true)]
 	public class CancellableObjectEventArgs<T> : CancellableEventArgs
 	{
+	    public CancellableObjectEventArgs(T eventObject, bool canCancel, EventMessages messages, IDictionary<string, object> additionalData)
+            : base(canCancel, messages, additionalData)
+	    {
+            EventObject = eventObject;
+        }
 
-		public CancellableObjectEventArgs(T eventObject, bool canCancel)
+	    public CancellableObjectEventArgs(T eventObject, bool canCancel, EventMessages eventMessages)
+            : base(canCancel, eventMessages)
+        {
+            EventObject = eventObject;
+        }
+
+        public CancellableObjectEventArgs(T eventObject, EventMessages eventMessages)
+            : this(eventObject, true, eventMessages)
+        {
+        }
+
+        public CancellableObjectEventArgs(T eventObject, bool canCancel)
 			: base(canCancel)
 		{
 			EventObject = eventObject;

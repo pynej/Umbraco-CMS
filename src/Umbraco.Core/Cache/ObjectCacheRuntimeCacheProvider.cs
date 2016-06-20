@@ -81,7 +81,7 @@ namespace Umbraco.Core.Cache
         {
             using (new WriteLock(_locker))
             {
-                var typeOfT = typeof(T);
+                var typeOfT = typeof (T);
                 var isInterface = typeOfT.IsInterface;
                 foreach (var key in MemoryCache
                     .Where(x =>
@@ -295,6 +295,5 @@ namespace Umbraco.Core.Cache
             }
             return policy;
         }
-
     }
 }

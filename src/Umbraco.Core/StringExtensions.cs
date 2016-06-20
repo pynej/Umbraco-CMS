@@ -41,6 +41,16 @@ namespace Umbraco.Core
                 ToCSharpEscapeChars[escape[0]] = escape[1];
         }
 
+        /// <summary>
+        /// Removes new lines and tabs
+        /// </summary>
+        /// <param name="txt"></param>
+        /// <returns></returns>
+        internal static string StripWhitespace(this string txt)
+        {
+            return Regex.Replace(txt, @"\s", string.Empty);
+        }
+
         internal static string StripFileExtension(this string fileName)
         {
             //filenames cannot contain line breaks
@@ -159,26 +169,27 @@ namespace Umbraco.Core
 
         internal static string ReplaceNonAlphanumericChars(this string input, char replacement)
         {
-            //any character that is not alphanumeric, convert to a hyphen
-            var mName = input;
-            foreach (var c in mName.ToCharArray().Where(c => !char.IsLetterOrDigit(c)))
-            {
-                mName = mName.Replace(c, replacement);
-            }
-            return mName;
+            var inputArray = input.ToCharArray();
+            var outputArray = new char[input.Length];
+            for (var i = 0; i < inputArray.Length; i++)
+                outputArray[i] = char.IsLetterOrDigit(inputArray[i]) ? inputArray[i] : replacement;
+            return new string(outputArray);
         }
+
+        private static readonly char[] CleanForXssChars = "*?(){}[];:%<>/\\|&'\"".ToCharArray();
 
         /// <summary>
         /// Cleans string to aid in preventing xss attacks.
         /// </summary>
         /// <param name="input"></param>
+        /// <param name="ignoreFromClean"></param>
         /// <returns></returns>
-        internal static string CleanForXss(this string input)
+        internal static string CleanForXss(this string input, params char[] ignoreFromClean)
         {
             //remove any html
             input = input.StripHtml();
             //strip out any potential chars involved with XSS
-            return input.ExceptChars(new HashSet<char>("*?(){}[];:%<>/\\|&'\"".ToCharArray()));
+            return input.ExceptChars(new HashSet<char>(CleanForXssChars.Except(ignoreFromClean)));
         }
 
         public static string ExceptChars(this string str, HashSet<char> toExclude)
@@ -428,6 +439,11 @@ namespace Umbraco.Core
         public static string EnsureEndsWith(this string input, char value)
         {
             return input.EndsWith(value.ToString(CultureInfo.InvariantCulture)) ? input : input + value;
+        }
+
+        public static string EnsureEndsWith(this string input, string toEndWith)
+        {
+            return input.EndsWith(toEndWith.ToString(CultureInfo.InvariantCulture)) ? input : input + toEndWith;
         }
 
         public static bool IsLowerCase(this char ch)
@@ -990,7 +1006,7 @@ namespace Umbraco.Core
                 // as the ShortStringHelper is too important, so as long as it's not there
                 // already, we use a default one. That should never happen, but...
                 Logging.LogHelper.Warn<IShortStringHelper>("ShortStringHelperResolver.HasCurrent == false, fallback to default.");
-                _helper = new DefaultShortStringHelper().WithDefaultConfig();
+                _helper = new DefaultShortStringHelper(UmbracoConfig.For.UmbracoSettings()).WithDefaultConfig();
                 _helper.Freeze();
                 return _helper;
             }
@@ -1262,7 +1278,7 @@ namespace Umbraco.Core
         // other helpers may not. DefaultShortStringHelper produces better, but non-compatible, results.
 
         /// <summary>
-        /// Splits a Pascal cased string into a phrase seperated by spaces.
+        /// Splits a Pascal cased string into a phrase separated by spaces.
         /// </summary>
         /// <param name="phrase">The text to split.</param>
         /// <returns>The splitted text.</returns>
@@ -1364,6 +1380,30 @@ namespace Umbraco.Core
             */
         }
 
+        public static string EscapeRegexSpecialCharacters(this string text)
+        {
+            var regexSpecialCharacters = new Dictionary<string, string>
+            {
+                {".", @"\."},
+                {"(", @"\("},
+                {")", @"\)"},
+                {"]", @"\]"},
+                {"[", @"\["},
+                {"{", @"\{"},
+                {"}", @"\}"},
+                {"?", @"\?"},
+                {"!", @"\!"},
+                {"$", @"\$"},
+                {"^", @"\^"},
+                {"+", @"\+"},
+                {"*", @"\*"},
+                {"|", @"\|"},
+                {"<", @"\<"},
+                {">", @"\>"}
+            };
+            return ReplaceMany(text, regexSpecialCharacters);
+        }
+
         public static bool ContainsAny(this string haystack, IEnumerable<string> needles, StringComparison comparison = StringComparison.CurrentCulture)
         {
             if (haystack == null) throw new ArgumentNullException("haystack");
@@ -1405,6 +1445,19 @@ namespace Umbraco.Core
         internal static string ToValidXmlString(this string text)
         {
             return string.IsNullOrEmpty(text) ? text : InvalidXmlChars.Replace(text, "");
+        }
+
+        /// <summary>
+        /// Converts a string to a Guid - WARNING, depending on the string, this may not be unique
+        /// </summary>
+        /// <param name="text"></param>
+        /// <returns></returns>
+        internal static Guid ToGuid(this string text)
+        {
+            var md5 = MD5.Create();
+            byte[] myStringBytes = Encoding.ASCII.GetBytes(text);
+            byte[] hash = md5.ComputeHash(myStringBytes);
+            return new Guid(hash);
         }
     }
 }

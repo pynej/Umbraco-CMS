@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Web;
 using Umbraco.Core.CodeAnnotations;
 using Umbraco.Core.Configuration;
 using Umbraco.Core.IO;
@@ -52,12 +53,7 @@ namespace umbraco
             if (IsPartialViewMacro == false)
             {
                 var attempt = fileService.CreatePartialView(model, snippetName, User.Id);
-
-                //TODO: We currently need to hack this because we are using the same editor for views, partial views, partial view macros and 
-                // the editor is using normal UI whereas the partial view repo and these classes are using IFileSystem with relative references
-                // so the model.Path is a relative reference to the ~/Views/Partials folder, we need to ensure it's prefixed with "Partials/"
-
-                _returnUrl = string.Format("settings/views/EditView.aspx?treeType=partialViews&file={0}", model.Path.TrimStart('/').EnsureStartsWith("Partials/"));
+                _returnUrl = string.Format("settings/views/EditView.aspx?treeType=partialViews&file={0}", HttpUtility.UrlEncode(model.Path.TrimStart('/').Replace("\\", "/")));
                 return attempt.Success;
             }
             else
@@ -73,11 +69,7 @@ namespace umbraco
                     macroService.Save(new Macro(attempt.Result.Alias, attempt.Result.Alias) { ScriptPath = virtualPath });
                 }
 
-                //TODO: We currently need to hack this because we are using the same editor for views, partial views, partial view macros and 
-                // the editor is using normal UI whereas the partial view repo and these classes are using IFileSystem with relative references
-                // so the model.Path is a relative reference to the ~/Views/Partials folder, we need to ensure it's prefixed with "MacroPartials/"
-
-                _returnUrl = string.Format("settings/views/EditView.aspx?treeType=partialViewMacros&file={0}", model.Path.TrimStart('/').EnsureStartsWith("MacroPartials/"));
+                _returnUrl = string.Format("settings/views/EditView.aspx?treeType=partialViewMacros&file={0}", HttpUtility.UrlEncode(model.Path.TrimStart('/').Replace("\\", "/")));
                 return attempt.Success;
             }
 

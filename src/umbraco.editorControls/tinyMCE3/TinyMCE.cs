@@ -153,6 +153,8 @@ namespace umbraco.editorControls.tinyMCE3
                         if (styleSheetId.Trim() != "")
                             try
                             {
+
+                                //TODO: Fix this, it will no longer work!
                                 var s = StyleSheet.GetStyleSheet(int.Parse(styleSheetId), false, false);
 
                                 if (s.nodeObjectType == StyleSheet.ModuleObjectType)
@@ -162,13 +164,8 @@ namespace umbraco.editorControls.tinyMCE3
                                     foreach (StylesheetProperty p in s.Properties)
                                     {
                                         if (styles != string.Empty)
-                                        {
                                             styles += ";";
-                                        }
-                                        if (p.Alias.StartsWith("."))
-                                            styles += p.Text + "=" + p.Alias;
-                                        else
-                                            styles += p.Text + "=" + p.Alias;
+                                        styles += p.Text + "=" + p.Alias;
                                     }
 
                                     cssFiles += ",";

@@ -1,12 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Umbraco.Core.Cache;
+using Umbraco.Core.Logging;
 using Umbraco.Core.Models;
 using Umbraco.Core.Models.EntityBase;
 using Umbraco.Core.Models.Rdbms;
-using Umbraco.Core.Persistence.Caching;
+
 using Umbraco.Core.Persistence.Factories;
 using Umbraco.Core.Persistence.Querying;
+using Umbraco.Core.Persistence.SqlSyntax;
 using Umbraco.Core.Persistence.UnitOfWork;
 
 namespace Umbraco.Core.Persistence.Repositories
@@ -16,54 +19,44 @@ namespace Umbraco.Core.Persistence.Repositories
     /// </summary>
     internal class LanguageRepository : PetaPocoRepositoryBase<int, ILanguage>, ILanguageRepository
     {
-		public LanguageRepository(IDatabaseUnitOfWork work)
-			: base(work)
-        {
+        public LanguageRepository(IDatabaseUnitOfWork work, CacheHelper cache, ILogger logger, ISqlSyntaxProvider sqlSyntax)
+            : base(work, cache, logger, sqlSyntax)
+        {           
         }
 
-		public LanguageRepository(IDatabaseUnitOfWork work, IRepositoryCacheProvider cache)
-            : base(work, cache)
+        private FullDataSetRepositoryCachePolicyFactory<ILanguage, int> _cachePolicyFactory;
+        protected override IRepositoryCachePolicyFactory<ILanguage, int> CachePolicyFactory
         {
+            get
+            {
+                //Use a FullDataSet cache policy - this will cache the entire GetAll result in a single collection
+                return _cachePolicyFactory ?? (_cachePolicyFactory = new FullDataSetRepositoryCachePolicyFactory<ILanguage, int>(
+                    RuntimeCache, GetEntityId, () => PerformGetAll(), false));
+            }
         }
 
         #region Overrides of RepositoryBase<int,Language>
 
         protected override ILanguage PerformGet(int id)
         {
-            var sql = GetBaseQuery(false);
-            sql.Where(GetBaseWhereClause(), new { Id = id });
-
-            var languageDto = Database.FirstOrDefault<LanguageDto>(sql);
-            if (languageDto == null)
-                return null;
-
-            var factory = new LanguageFactory();
-            var entity = factory.BuildEntity(languageDto);
-
-            //on initial construction we don't want to have dirty properties tracked
-            // http://issues.umbraco.org/issue/U4-1946
-            ((Entity)entity).ResetDirtyProperties(false);
-
-            return entity;
+            //use the underlying GetAll which will force cache all domains
+            return GetAll().FirstOrDefault(x => x.Id == id);
         }
 
         protected override IEnumerable<ILanguage> PerformGetAll(params int[] ids)
         {
+            var sql = GetBaseQuery(false).Where("umbracoLanguage.id > 0");
             if (ids.Any())
             {
-                foreach (var id in ids)
-                {
-                    yield return Get(id);
-                }
+                sql.Where("umbracoLanguage.id in (@ids)", new { ids = ids });
             }
-            else
-            {
-                var dtos = Database.Fetch<LanguageDto>("WHERE id > 0");
-                foreach (var dto in dtos)
-                {
-                    yield return Get(dto.Id);
-                }
-            }
+
+            //this needs to be sorted since that is the way legacy worked - default language is the first one!!
+            //even though legacy didn't sort, it should be by id
+            sql.OrderBy<LanguageDto>(dto => dto.Id, SqlSyntax);
+
+            
+            return Database.Fetch<LanguageDto>(sql).Select(ConvertFromDto);
         }
 
         protected override IEnumerable<ILanguage> PerformGetByQuery(IQuery<ILanguage> query)
@@ -71,13 +64,7 @@ namespace Umbraco.Core.Persistence.Repositories
             var sqlClause = GetBaseQuery(false);
             var translator = new SqlTranslator<ILanguage>(sqlClause, query);
             var sql = translator.Translate();
-
-            var dtos = Database.Fetch<LanguageDto>(sql);
-
-            foreach (var dto in dtos)
-            {
-                yield return Get(dto.Id);
-            }
+            return Database.Fetch<LanguageDto>(sql).Select(ConvertFromDto);
         }
 
         #endregion
@@ -88,7 +75,7 @@ namespace Umbraco.Core.Persistence.Repositories
         {
             var sql = new Sql();
             sql.Select(isCount ? "COUNT(*)" : "*")
-               .From<LanguageDto>();
+               .From<LanguageDto>(SqlSyntax);
             return sql;
         }
 
@@ -99,9 +86,12 @@ namespace Umbraco.Core.Persistence.Repositories
 
         protected override IEnumerable<string> GetDeleteClauses()
         {
-            //NOTE: There is no constraint between the Language and cmsDictionary/cmsLanguageText tables (?)
+
             var list = new List<string>
                            {
+                               //NOTE: There is no constraint between the Language and cmsDictionary/cmsLanguageText tables (?)
+                               // but we still need to remove them
+                               "DELETE FROM cmsLanguageText WHERE languageId = @Id",
                                "DELETE FROM umbracoLanguage WHERE id = @Id"
                            };
             return list;
@@ -139,8 +129,42 @@ namespace Umbraco.Core.Persistence.Repositories
             Database.Update(dto);
 
             entity.ResetDirtyProperties();
+
+            //Clear the cache entries that exist by key/iso
+            RuntimeCache.ClearCacheItem(GetCacheIdKey<ILanguage>(entity.IsoCode));
+            RuntimeCache.ClearCacheItem(GetCacheIdKey<ILanguage>(entity.CultureName));
+        }
+
+        protected override void PersistDeletedItem(ILanguage entity)
+        {
+            base.PersistDeletedItem(entity);
+
+            //Clear the cache entries that exist by key/iso
+            RuntimeCache.ClearCacheItem(GetCacheIdKey<ILanguage>(entity.IsoCode));
+            RuntimeCache.ClearCacheItem(GetCacheIdKey<ILanguage>(entity.CultureName));
         }
 
         #endregion
+
+        protected ILanguage ConvertFromDto(LanguageDto dto)
+        {
+            var factory = new LanguageFactory();
+            var entity = factory.BuildEntity(dto);
+            return entity;
+        }
+
+        public ILanguage GetByCultureName(string cultureName)
+        {
+            //use the underlying GetAll which will force cache all languages
+            return GetAll().FirstOrDefault(x => x.CultureName.InvariantEquals(cultureName));
+        }
+
+        public ILanguage GetByIsoCode(string isoCode)
+        {
+            //use the underlying GetAll which will force cache all languages
+            return GetAll().FirstOrDefault(x => x.IsoCode.InvariantEquals(isoCode));
+        }
+
+   
     }
 }

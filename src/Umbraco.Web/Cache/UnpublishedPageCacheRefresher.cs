@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Web.Script.Serialization;
 using umbraco;
+using Umbraco.Core;
 using Umbraco.Core.Cache;
 using Umbraco.Core.Models;
 using System.Linq;
-using Umbraco.Core.Persistence.Caching;
+
+using Umbraco.Core.Persistence.Repositories;
 using Umbraco.Core.Sync;
 
 namespace Umbraco.Web.Cache
@@ -75,34 +77,44 @@ namespace Umbraco.Web.Cache
 
         public override void RefreshAll()
         {
-            RuntimeCacheProvider.Current.Clear(typeof(IContent));
+            ClearAllIsolatedCacheByEntityType<IContent>();
+            ClearAllIsolatedCacheByEntityType<PublicAccessEntry>();
+            DistributedCache.Instance.ClearDomainCacheOnCurrentServer();
             base.RefreshAll();
         }
 
         public override void Refresh(int id)
         {
-            RuntimeCacheProvider.Current.Delete(typeof(IContent), id);
+            ClearRepositoryCacheItemById(id);
+            ClearAllIsolatedCacheByEntityType<PublicAccessEntry>();
             content.Instance.UpdateSortOrder(id);
+            DistributedCache.Instance.ClearDomainCacheOnCurrentServer();
             base.Refresh(id);
         }
 
         public override void Remove(int id)
         {
-            RuntimeCacheProvider.Current.Delete(typeof(IContent), id);
+            ClearRepositoryCacheItemById(id);
+            ClearAllIsolatedCacheByEntityType<PublicAccessEntry>();
+            DistributedCache.Instance.ClearDomainCacheOnCurrentServer();
             base.Remove(id);
         }
 
 
         public override void Refresh(IContent instance)
         {
-            RuntimeCacheProvider.Current.Delete(typeof(IContent), instance.Id);
+            ClearRepositoryCacheItemById(instance.Id);
+            ClearAllIsolatedCacheByEntityType<PublicAccessEntry>();
             content.Instance.UpdateSortOrder(instance);
+            DistributedCache.Instance.ClearDomainCacheOnCurrentServer();
             base.Refresh(instance);
         }
 
         public override void Remove(IContent instance)
         {
-            RuntimeCacheProvider.Current.Delete(typeof(IContent), instance.Id);
+            ClearRepositoryCacheItemById(instance.Id);
+            ClearAllIsolatedCacheByEntityType<PublicAccessEntry>();
+            DistributedCache.Instance.ClearDomainCacheOnCurrentServer();
             base.Remove(instance);
         }
 
@@ -112,13 +124,26 @@ namespace Umbraco.Web.Cache
         /// <param name="jsonPayload"></param>
         public void Refresh(string jsonPayload)
         {
+            ClearAllIsolatedCacheByEntityType<PublicAccessEntry>();
+
             foreach (var payload in DeserializeFromJsonPayload(jsonPayload))
             {
-                RuntimeCacheProvider.Current.Delete(typeof(IContent), payload.Id);
+                ClearRepositoryCacheItemById(payload.Id);
                 content.Instance.UpdateSortOrder(payload.Id);
             }
 
+            DistributedCache.Instance.ClearDomainCacheOnCurrentServer();
+
             OnCacheUpdated(Instance, new CacheRefresherEventArgs(jsonPayload, MessageType.RefreshByJson));
+        }
+
+        private void ClearRepositoryCacheItemById(int id)
+        {
+            var contentCache = ApplicationContext.Current.ApplicationCache.IsolatedRuntimeCache.GetCache<IContent>();
+            if (contentCache)
+            {
+                contentCache.Result.ClearCacheItem(RepositoryBase.GetCacheIdKey<IContent>(id));
+            }
         }
         
     }

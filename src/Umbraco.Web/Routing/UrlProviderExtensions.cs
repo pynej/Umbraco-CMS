@@ -24,7 +24,7 @@ namespace Umbraco.Web.Routing
 
             var urls = new List<string>();
 
-            if (content.HasPublishedVersion() == false)
+            if (content.HasPublishedVersion == false)
             {
                 urls.Add(ui.Text("content", "itemNotPublished", umbracoContext.Security.CurrentUser));
                 return urls;
@@ -47,6 +47,30 @@ namespace Umbraco.Web.Routing
                     urls.Add(ui.Text("content", "parentNotPublishedAnomaly", umbracoContext.Security.CurrentUser));
                 else
                     urls.Add(ui.Text("content", "parentNotPublished", parent.Name, umbracoContext.Security.CurrentUser));
+            }
+            else if (url.StartsWith("#err-"))
+            {
+                // route error, report
+                var id = int.Parse(url.Substring(5));
+                var o = umbracoContext.ContentCache.GetById(id);
+                string s;
+                if (o == null)
+                {
+                    s = "(unknown)";
+                }
+                else
+                {
+                    var l = new List<string>();
+                    while (o != null)
+                    {
+                        l.Add(o.Name);
+                        o = o.Parent;
+                    }
+                    l.Reverse();
+                    s = "/" + string.Join("/", l) + " (id=" + id + ")";
+
+                }
+                urls.Add(ui.Text("content", "routeError", s, umbracoContext.Security.CurrentUser));
             }
             else
             {

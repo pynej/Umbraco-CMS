@@ -9,7 +9,7 @@ using Umbraco.Core.Models;
 using Umbraco.Core.Models.EntityBase;
 using Umbraco.Core.Models.PublishedContent;
 using Umbraco.Core.Models.Rdbms;
-using Umbraco.Core.Persistence.Caching;
+
 using Umbraco.Web.PublishedCache;
 using Umbraco.Web.PublishedCache.XmlPublishedCache;
 
@@ -126,8 +126,12 @@ namespace Umbraco.Web.Cache
 
         public override void RefreshAll()
         {
-            RuntimeCacheProvider.Current.Clear(typeof(IContent));
-            RuntimeCacheProvider.Current.Clear(typeof(IContentType));
+            ClearAllIsolatedCacheByEntityType<IContent>();
+            ClearAllIsolatedCacheByEntityType<IContentType>();
+            ClearAllIsolatedCacheByEntityType<IMedia>();
+            ClearAllIsolatedCacheByEntityType<IMediaType>();
+            ClearAllIsolatedCacheByEntityType<IMember>();
+            ClearAllIsolatedCacheByEntityType<IMemberType>();
 
             //all property type cache
             ApplicationContext.Current.ApplicationCache.RuntimeCache.ClearCacheByKeySearch(CacheKeys.PropertyTypeCacheKey);
@@ -177,10 +181,9 @@ namespace Umbraco.Web.Cache
         /// -- CacheKeys.ContentTypePropertiesCacheKey + contentType.Id
         /// - ContentType.RemoveFromDataTypeCache (clears static object/dictionary cache)
         /// - InMemoryCacheProvider.Current.Clear();
-        /// - RuntimeCacheProvider.Current.Clear(); 
         /// - RoutesCache.Clear();        
         /// </remarks>
-        private static void ClearContentTypeCache(JsonPayload[] payloads)
+        private void ClearContentTypeCache(JsonPayload[] payloads)
         {
             var needsContentRefresh = false;
 
@@ -215,18 +218,18 @@ namespace Umbraco.Web.Cache
             {
                 if (payloads.Any(x => x.Type == typeof (IContentType).Name))
                 {
-                    RuntimeCacheProvider.Current.Clear(typeof(IContent));
-                    RuntimeCacheProvider.Current.Clear(typeof(IContentType));    
+                    ClearAllIsolatedCacheByEntityType<IContent>();
+                    ClearAllIsolatedCacheByEntityType<IContentType>();
                 }
                 if (payloads.Any(x => x.Type == typeof(IMediaType).Name))
                 {
-                    RuntimeCacheProvider.Current.Clear(typeof(IMedia));
-                    RuntimeCacheProvider.Current.Clear(typeof(IMediaType));
+                    ClearAllIsolatedCacheByEntityType<IMedia>();
+                    ClearAllIsolatedCacheByEntityType<IMediaType>();
                 }
                 if (payloads.Any(x => x.Type == typeof(IMemberType).Name))
                 {
-                    RuntimeCacheProvider.Current.Clear(typeof(IMember));
-                    RuntimeCacheProvider.Current.Clear(typeof(IMemberType));
+                    ClearAllIsolatedCacheByEntityType<IMember>();
+                    ClearAllIsolatedCacheByEntityType<IMemberType>();
                 }
                 
 
@@ -292,7 +295,7 @@ namespace Umbraco.Web.Cache
         /// </summary>
         /// <param name="isDeleted">true if the entity was deleted, false if it is just an update</param>
         /// <param name="ids"></param>
-        private static void ClearContentTypeCache(bool isDeleted, params int[] ids)
+        private void ClearContentTypeCache(bool isDeleted, params int[] ids)
         {
             ClearContentTypeCache(
                 ids.Select(

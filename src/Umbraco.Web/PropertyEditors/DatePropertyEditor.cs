@@ -9,7 +9,7 @@ using Umbraco.Core.Services;
 
 namespace Umbraco.Web.PropertyEditors
 {
-    [PropertyEditor(Constants.PropertyEditors.DateAlias, "Date", "DATE", "datepicker")]
+    [PropertyEditor(Constants.PropertyEditors.DateAlias, "Date", PropertyEditorValueTypes.Date, "datepicker", Icon="icon-calendar")]
     public class DatePropertyEditor : PropertyEditor
     {
         public DatePropertyEditor()
@@ -61,12 +61,6 @@ namespace Umbraco.Web.PropertyEditors
         protected override PreValueEditor CreatePreValueEditor()
         {
             return new DatePreValueEditor();
-        }
-
-        internal class DatePreValueEditor : PreValueEditor
-        {
-            [PreValueField("format", "Date format", "textstring", Description = "If left empty then the format is YYYY-MM-DD. (see momentjs.com for supported formats)")]
-            public string DefaultValue { get; set; }
         }
     }
 }

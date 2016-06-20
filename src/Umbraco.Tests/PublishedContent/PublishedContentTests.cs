@@ -30,7 +30,7 @@ namespace Umbraco.Tests.PublishedContent
 
             // this is so the model factory looks into the test assembly
             _pluginManager = PluginManager.Current;
-            PluginManager.Current = new PluginManager(false)
+            PluginManager.Current = new PluginManager(new ActivatorServiceProvider(), CacheHelper.RuntimeCache, ProfilingLogger, false)
             {
                 AssembliesToScan = _pluginManager.AssembliesToScan
                     .Union(new[] { typeof(PublishedContentTests).Assembly })
@@ -50,7 +50,8 @@ namespace Umbraco.Tests.PublishedContent
                     new PublishedPropertyType("content", 0, Constants.PropertyEditors.TinyMCEAlias), 
                     new PublishedPropertyType("testRecursive", 0, "?"), 
                 };
-            var type = new AutoPublishedContentType(0, "anything", propertyTypes);
+            var compositionAliases = new[] {"MyCompositionAlias"};
+            var type = new AutoPublishedContentType(0, "anything", compositionAliases, propertyTypes);
             PublishedContentType.GetPublishedContentTypeCallback = (alias) => type;
         }
 
@@ -455,14 +456,37 @@ namespace Umbraco.Tests.PublishedContent
 		}
 
 		[Test]
+		public void FirstChild()
+		{
+			var doc = GetNode(1173); // has child nodes
+			Assert.IsNotNull(doc.FirstChild());
+			Assert.IsNotNull(doc.FirstChild(x => true));
+			Assert.IsNotNull(doc.FirstChild<IPublishedContent>());
+
+			doc = GetNode(1175); // does not have child nodes
+			Assert.IsNull(doc.FirstChild());
+			Assert.IsNull(doc.FirstChild(x => true));
+			Assert.IsNull(doc.FirstChild<IPublishedContent>());
+		}
+
+        [Test]
+        public void IsComposedOf()
+        {
+            var doc = GetNode(1173);
+
+            var isComposedOf = doc.IsComposedOf("MyCompositionAlias");
+
+            Assert.IsTrue(isComposedOf);
+        }
+
+		[Test]
 		public void HasProperty()
 		{
 			var doc = GetNode(1173);
 
 			var hasProp = doc.HasProperty(Constants.Conventions.Content.UrlAlias);
 
-			Assert.AreEqual(true, (bool)hasProp);
-
+            Assert.IsTrue(hasProp);
 		}
 
 		[Test]

@@ -9,13 +9,29 @@ using System.Threading.Tasks;
 using System.Web;
 using System.Web.Http;
 using System.Web.Http.ModelBinding;
+using Microsoft.Owin;
 using Umbraco.Core;
+using Umbraco.Web.Models.ContentEditing;
 
 namespace Umbraco.Web.WebApi
 {
     
     public static class HttpRequestMessageExtensions
     {
+
+        /// <summary>
+        /// Borrowed from the latest Microsoft.AspNet.WebApi.Owin package which we cannot use because of a later webapi dependency
+        /// </summary>
+        /// <param name="request"></param>
+        /// <returns></returns>
+        internal static Attempt<IOwinContext> TryGetOwinContext(this HttpRequestMessage request)
+        {
+            var httpContext = request.TryGetHttpContext();
+            return httpContext 
+                ? Attempt.Succeed(httpContext.Result.GetOwinContext()) 
+                : Attempt<IOwinContext>.Fail();
+        }
+
         /// <summary>
         /// Tries to retrieve the current HttpContext if one exists.
         /// </summary>
@@ -90,6 +106,22 @@ namespace Umbraco.Web.WebApi
             var msg = request.CreateErrorResponse(HttpStatusCode.BadRequest, errorMessage);
             msg.Headers.Add("X-Status-Reason", "Validation failed");
             return msg;
+        }
+
+        /// <summary>
+        /// Creates an error response with notifications in the result to be displayed in the UI
+        /// </summary>
+        /// <param name="request"></param>
+        /// <param name="errorMessage"></param>
+        /// <returns></returns>
+        public static HttpResponseMessage CreateNotificationValidationErrorResponse(this HttpRequestMessage request, string errorMessage)
+        {
+            var notificationModel = new SimpleNotificationModel
+            {
+                Message = errorMessage
+            };
+            notificationModel.AddErrorNotification(errorMessage, string.Empty);
+            return request.CreateValidationErrorResponse(notificationModel);
         }
 
         /// <summary>

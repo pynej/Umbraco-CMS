@@ -1,149 +1,158 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Web;
+using Newtonsoft.Json;
 using Umbraco.Core;
-using Umbraco.Core.Configuration;
 using Umbraco.Core.Logging;
 using Umbraco.Core.Services;
 using Umbraco.Core.Sync;
 using Umbraco.Web.Routing;
+using Umbraco.Web.Scheduling;
 
 namespace Umbraco.Web.Strategies
 {
     /// <summary>
-    /// This will ensure that the server is automatically registered in the database as an active node 
-    /// on application startup and whenever a back office request occurs.
+    /// Ensures that servers are automatically registered in the database, when using the database server registrar.
     /// </summary>
     /// <remarks>
-    /// We do this on app startup to ensure that the server is in the database but we also do it for the first 'x' times
-    /// a back office request is made so that we can tell if they are using https protocol which would update to that address
-    /// in the database. The first front-end request probably wouldn't be an https request.
-    /// 
-    /// For back office requests (so that we don't constantly make db calls), we'll only update the database when we detect at least
-    /// a timespan of 1 minute between requests.
+    /// <para>At the moment servers are automatically registered upon first request and then on every
+    /// request but not more than once per (configurable) period. This really is "for information & debug" purposes so
+    /// we can look at the table and see what servers are registered - but the info is not used anywhere.</para>
+    /// <para>Should we actually want to use this, we would need a better and more deterministic way of figuring
+    /// out the "server address" ie the address to which server-to-server requests should be sent - because it
+    /// probably is not the "current request address" - especially in multi-domains configurations.</para>
     /// </remarks>
     public sealed class ServerRegistrationEventHandler : ApplicationEventHandler
     {
-        private static bool _initUpdated = false;
-        private static DateTime _lastUpdated = DateTime.MinValue;
-        private static readonly ReaderWriterLockSlim Locker = new ReaderWriterLockSlim();
+        private DatabaseServerRegistrar _registrar;
+        private BackgroundTaskRunner<IBackgroundTask> _backgroundTaskRunner;
+        private bool _started = false;
+        private TouchServerTask _task;
+        private object _lock = new object();
 
-
-        //protected override void ApplicationStarting(UmbracoApplicationBase umbracoApplication, ApplicationContext applicationContext)
-        //{            
-        //    ServerRegistrarResolver.Current.SetServerRegistrar(
-        //        new DatabaseServerRegistrar(
-        //            new Lazy<ServerRegistrationService>(() => applicationContext.Services.ServerRegistrationService)));
-        //}
-
-        /// <summary>
-        /// Update the database with this entry and bind to request events
-        /// </summary>
-        /// <param name="umbracoApplication"></param>
-        /// <param name="applicationContext"></param>
+        // bind to events
         protected override void ApplicationStarted(UmbracoApplicationBase umbracoApplication, ApplicationContext applicationContext)
         {
-            //no need to bind to the event if we are not actually using the database server registrar
-            if (ServerRegistrarResolver.Current.Registrar is DatabaseServerRegistrar)
-            {
-                //bind to event
-                UmbracoModule.RouteAttempt += UmbracoModuleRouteAttempt;   
-            }
+            _registrar = ServerRegistrarResolver.Current.Registrar as DatabaseServerRegistrar;
+            
+            // only for the DatabaseServerRegistrar
+            if (_registrar == null) return;
+
+            _backgroundTaskRunner = new BackgroundTaskRunner<IBackgroundTask>(
+                new BackgroundTaskRunnerOptions { AutoStart = true },
+                applicationContext.ProfilingLogger.Logger);
+
+            //We will start the whole process when a successful request is made
+            UmbracoModule.RouteAttempt += UmbracoModuleRouteAttempt;
         }
 
-
-        static void UmbracoModuleRouteAttempt(object sender, RoutableAttemptEventArgs e)
+        /// <summary>
+        /// Handle when a request is made
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
+        /// <remarks>
+        /// We require this because:
+        /// - ApplicationContext.UmbracoApplicationUrl is initialized by UmbracoModule in BeginRequest
+        /// - RegisterServer is called on UmbracoModule.RouteAttempt which is triggered in ProcessRequest
+        ///      we are safe, UmbracoApplicationUrl has been initialized
+        /// </remarks>
+        private void UmbracoModuleRouteAttempt(object sender, RoutableAttemptEventArgs e)
         {
-            if (e.HttpContext.Request == null || e.HttpContext.Request.Url == null) return;
-
-            if (e.Outcome == EnsureRoutableOutcome.IsRoutable)
+            switch (e.Outcome)
             {
-                using (var lck = new UpgradeableReadLock(Locker))
+                case EnsureRoutableOutcome.IsRoutable:
+                case EnsureRoutableOutcome.NotDocumentRequest:
+                    RegisterBackgroundTasks(e);
+                    break;                
+            }
+        }
+        
+        private void RegisterBackgroundTasks(UmbracoRequestEventArgs e)
+        {
+            //remove handler, we're done
+            UmbracoModule.RouteAttempt -= UmbracoModuleRouteAttempt;
+
+            //only perform this one time ever
+            LazyInitializer.EnsureInitialized(ref _task, ref _started, ref _lock, () =>
+            {
+                var serverAddress = e.UmbracoContext.Application.UmbracoApplicationUrl;
+                var svc = e.UmbracoContext.Application.Services.ServerRegistrationService;
+
+                var task = new TouchServerTask(_backgroundTaskRunner,
+                    15000, //delay before first execution
+                    _registrar.Options.RecurringSeconds*1000, //amount of ms between executions
+                    svc, _registrar, serverAddress);
+                
+                //Perform the rest async, we don't want to block the startup sequence
+                // this will just reoccur on a background thread
+                _backgroundTaskRunner.TryAdd(task);
+
+                return task;
+            });
+        }
+
+        private class TouchServerTask : RecurringTaskBase
+        {
+            private readonly IServerRegistrationService _svc;
+            private readonly DatabaseServerRegistrar _registrar;
+            private readonly string _serverAddress;
+
+            /// <summary>
+            /// Initializes a new instance of the <see cref="RecurringTaskBase"/> class.
+            /// </summary>
+            /// <param name="runner">The task runner.</param>
+            /// <param name="delayMilliseconds">The delay.</param>
+            /// <param name="periodMilliseconds">The period.</param>
+            /// <param name="svc"></param>
+            /// <param name="registrar"></param>
+            /// <param name="serverAddress"></param>
+            /// <remarks>The task will repeat itself periodically. Use this constructor to create a new task.</remarks>
+            public TouchServerTask(IBackgroundTaskRunner<RecurringTaskBase> runner, int delayMilliseconds, int periodMilliseconds,
+                IServerRegistrationService svc, DatabaseServerRegistrar registrar, string serverAddress)
+                : base(runner, delayMilliseconds, periodMilliseconds)
+            {
+                if (svc == null) throw new ArgumentNullException("svc");
+                _svc = svc;
+                _registrar = registrar;
+                _serverAddress = serverAddress;
+            }
+
+            public override bool IsAsync
+            {
+                get { return false; }
+            }
+
+            public override bool RunsOnShutdown
+            {
+                get { return false; }
+            }
+
+            /// <summary>
+            /// Runs the background task.
+            /// </summary>
+            /// <returns>A value indicating whether to repeat the task.</returns>
+            public override bool PerformRun()
+            {
+                try
                 {
-                    //we only want to do the initial update once
-                    if (!_initUpdated)
-                    {
-                        lck.UpgradeToWriteLock();
-                        _initUpdated = true;
-                        UpdateServerEntry(e.HttpContext, e.UmbracoContext.Application);
-                        return;
-                    }
+                    _svc.TouchServer(_serverAddress, _svc.CurrentServerIdentity, _registrar.Options.StaleServerTimeout);
+
+                    return true; // repeat
+                }
+                catch (Exception ex)
+                {
+                    LogHelper.Error<ServerRegistrationEventHandler>("Failed to update server record in database.", ex);
+
+                    return false; // probably stop if we have an error
                 }
             }
 
-            //if it is not a document request, we'll check if it is a back end request
-            if (e.Outcome == EnsureRoutableOutcome.NotDocumentRequest)
+            public override Task<bool> PerformRunAsync(CancellationToken token)
             {
-                //check if this is in the umbraco back office
-                if (e.HttpContext.Request.Url.IsBackOfficeRequest(HttpRuntime.AppDomainAppVirtualPath))
-                {
-                    //yup it's a back office request!
-                    using (var lck = new UpgradeableReadLock(Locker))
-                    {
-                        //we don't want to update if it's not been at least a minute since last time
-                        var isItAMinute = DateTime.Now.Subtract(_lastUpdated).TotalSeconds >= 60;
-                        if (isItAMinute)
-                        {
-                            lck.UpgradeToWriteLock();
-                            _initUpdated = true;
-                            _lastUpdated = DateTime.Now;
-                            UpdateServerEntry(e.HttpContext, e.UmbracoContext.Application);
-                        }
-                    }
-                }
+                throw new NotImplementedException();
             }
         }
-
-
-        private static void UpdateServerEntry(HttpContextBase httpContext, ApplicationContext applicationContext)
-        {
-            try
-            {
-                var address = httpContext.Request.Url.GetLeftPart(UriPartial.Authority);
-                applicationContext.Services.ServerRegistrationService.EnsureActive(address);
-            }
-            catch (Exception e)
-            {
-                LogHelper.Error<ServerRegistrationEventHandler>("Failed to update server record in database.", e);
-            }
-        }
-
-        //private static IEnumerable<KeyValuePair<string, string>> GetBindings(HttpContextBase context)
-        //{
-        //    // Get the Site name  
-        //    string siteName = System.Web.Hosting.HostingEnvironment.SiteName;
-
-        //    // Get the sites section from the AppPool.config 
-        //    Microsoft.Web.Administration.ConfigurationSection sitesSection =
-        //        Microsoft.Web.Administration.WebConfigurationManager.GetSection(null, null, "system.applicationHost/sites");
-
-        //    foreach (Microsoft.Web.Administration.ConfigurationElement site in sitesSection.GetCollection())
-        //    {
-        //        // Find the right Site 
-        //        if (String.Equals((string)site["name"], siteName, StringComparison.OrdinalIgnoreCase))
-        //        {
-
-        //            // For each binding see if they are http based and return the port and protocol 
-        //            foreach (Microsoft.Web.Administration.ConfigurationElement binding in site.GetCollection("bindings"))
-        //            {
-        //                string protocol = (string)binding["protocol"];
-        //                string bindingInfo = (string)binding["bindingInformation"];
-
-        //                if (protocol.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-        //                {
-        //                    string[] parts = bindingInfo.Split(':');
-        //                    if (parts.Length == 3)
-        //                    {
-        //                        string port = parts[1];
-        //                        yield return new KeyValuePair<string, string>(protocol, port);
-        //                    }
-        //                }
-        //            }
-        //        }
-        //    }
-        //}
     }
 }

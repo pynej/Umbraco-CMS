@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Newtonsoft.Json;
 using Umbraco.Core.IO;
@@ -13,6 +14,7 @@ namespace Umbraco.Core.PropertyEditors
     /// <remarks>
     /// The Json serialization attributes are required for manifest property editors to work
     /// </remarks>
+    [DebuggerDisplay("{DebuggerDisplay(),nq}")]
     public class PropertyEditor : IParameterEditor
     {
         private readonly PropertyEditorAttribute _attribute;
@@ -22,6 +24,10 @@ namespace Umbraco.Core.PropertyEditors
         /// </summary>
         public PropertyEditor()             
         {
+            //defaults
+            Icon = Constants.Icons.PropertyEditor;
+            Group = "common";
+
             //assign properties based on the attribute if it is found
             _attribute = GetType().GetCustomAttribute<PropertyEditorAttribute>(false);
             if (_attribute != null)
@@ -30,6 +36,8 @@ namespace Umbraco.Core.PropertyEditors
                 Alias = _attribute.Alias;
                 Name = _attribute.Name;
                 IsParameterEditor = _attribute.IsParameterEditor;
+                Icon = _attribute.Icon;
+                Group = _attribute.Group;
             }
         }
 
@@ -62,6 +70,19 @@ namespace Umbraco.Core.PropertyEditors
         /// </summary>
         [JsonProperty("name", Required = Required.Always)]
         public string Name { get; internal set; }
+
+        /// <summary>
+        /// The icon of the property editor - if not set it uses a default icon
+        /// </summary>
+        [JsonProperty("icon")]
+        public string Icon { get; internal set; }
+
+        /// <summary>
+        /// The group of the property editor - if not set the editor will list as a generic editor
+        /// </summary>
+        [JsonProperty("group")]
+        public string Group { get; internal set; }
+
 
         [JsonProperty("editor", Required = Required.Always)]        
         public PropertyValueEditor ValueEditor
@@ -161,6 +182,14 @@ namespace Umbraco.Core.PropertyEditors
         public override int GetHashCode()
         {
             return Alias.GetHashCode();
+        }
+
+        /// <summary>
+        /// Provides a summary of the PropertyEditor for use with the <see cref="DebuggerDisplayAttribute"/>.
+        /// </summary>
+        protected virtual string DebuggerDisplay()
+        {
+            return string.Format("Name: {0}, Alias: {1}, IsParameterEditor: {2}", Name, Alias, IsParameterEditor);
         }
     }
 }

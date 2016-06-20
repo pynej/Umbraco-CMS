@@ -5,9 +5,10 @@ var app = angular.module('umbraco', [
 	'umbraco.services',
 	'umbraco.mocks',
 	'umbraco.security',
-    'ngCookies'
+    'ngCookies',
+    'LocalStorageModule' 
 ]);
 
-/* For Angular 1.2: we need to load in Routing seperately
+/* For Angular 1.2: we need to load in Routing separately
 	    'ngRoute'
 */

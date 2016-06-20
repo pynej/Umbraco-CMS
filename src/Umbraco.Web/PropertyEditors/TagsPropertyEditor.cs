@@ -11,7 +11,7 @@ using Umbraco.Core.PropertyEditors;
 namespace Umbraco.Web.PropertyEditors
 {
     [SupportTags(typeof(TagPropertyEditorTagDefinition), ValueType = TagValueType.CustomTagList)]
-    [PropertyEditor(Constants.PropertyEditors.TagsAlias, "Tags", "tags")]
+    [PropertyEditor(Constants.PropertyEditors.TagsAlias, "Tags", "tags", Icon="icon-tags")]
     public class TagsPropertyEditor : PropertyEditor
     {
         public TagsPropertyEditor()
@@ -72,7 +72,7 @@ namespace Umbraco.Web.PropertyEditors
             /// The default validator used is the RequiredValueValidator but this can be overridden by property editors
             /// if they need to do some custom validation, or if the value being validated is a json object.
             /// </remarks>
-            internal override ManifestValueValidator RequiredValidator
+            public override ManifestValueValidator RequiredValidator
             {
                 get { return new RequiredTagsValueValidator(); }
             }

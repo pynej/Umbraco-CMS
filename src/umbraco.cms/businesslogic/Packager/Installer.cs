@@ -14,6 +14,7 @@ using umbraco.cms.businesslogic.web;
 using umbraco.cms.businesslogic.propertytype;
 using umbraco.BusinessLogic;
 using System.Diagnostics;
+using System.Security;
 using umbraco.cms.businesslogic.macro;
 using umbraco.cms.businesslogic.template;
 using umbraco.interfaces;
@@ -242,6 +243,9 @@ namespace umbraco.cms.businesslogic.packager
                 //retrieve the manifest to continue installation
                 var insPack = InstalledPackage.GetById(packageId);
 
+                //TODO: Depending on some files, some files should be installed differently.
+                //i.e. if stylsheets should probably be installed via business logic, media items should probably use the media IFileSystem!
+
                 // Move files
                 //string virtualBasePath = System.Web.HttpContext.Current.Request.ApplicationPath;
                 string basePath = System.Web.Hosting.HostingEnvironment.ApplicationPhysicalPath;
@@ -301,13 +305,20 @@ namespace umbraco.cms.businesslogic.packager
 
                 // Get current user, with a fallback
                 var currentUser = new User(0);
+
+                //if there's a context, try to resolve the user - this will return null if there is a context but no
+                // user found when there are old/invalid cookies lying around most likely during installation.
+                // in that case we'll keep using the admin user
                 if (string.IsNullOrEmpty(BasePages.UmbracoEnsuredPage.umbracoUserContextID) == false)
                 {
                     if (BasePages.UmbracoEnsuredPage.ValidateUserContextID(BasePages.UmbracoEnsuredPage.umbracoUserContextID))
                     {
-                        currentUser = User.GetCurrent();
+                        var userById = User.GetCurrent();
+                        if (userById != null)
+                            currentUser = userById;
                     }
                 }
+                
 
                 //Xml as XElement which is used with the new PackagingService
                 var rootElement = Config.DocumentElement.GetXElement();
@@ -349,6 +360,7 @@ namespace umbraco.cms.businesslogic.packager
                 #region Macros
                 foreach (XmlNode n in Config.DocumentElement.SelectNodes("//macro"))
                 {
+                    //TODO: Fix this, this should not use the legacy API
                     Macro m = Macro.Import(n);
 
                     if (m != null)

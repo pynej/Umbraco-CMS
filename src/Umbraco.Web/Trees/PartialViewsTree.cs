@@ -25,12 +25,10 @@ namespace Umbraco.Web.Trees
 
 		public override void RenderJS(ref StringBuilder javascript)
 		{
-			//NOTE: Notice the Partials%2f string below, this is a URLEncoded string of "Partials/" so that the editor knows
-			// to load the file from the correct location
 			javascript.Append(
                 @"
 		                 function openPartialView(id) {
-		                    UmbClientMgr.contentFrame('Settings/Views/EditView.aspx?treeType=partialViews&file=Partials%2f' + id);
+		                    UmbClientMgr.contentFrame('Settings/Views/EditView.aspx?treeType=partialViews&file=' + id);
 					    }
 		                ");
 		}
@@ -79,8 +77,8 @@ namespace Umbraco.Web.Trees
 		protected override void OnRenderFileNode(ref XmlTreeNode xNode)
 		{
 			ChangeNodeAction(xNode);
-			xNode.Icon = "settingView.gif";
-			xNode.OpenIcon = "settingView.gif";
+			xNode.Icon = "icon-article";
+			xNode.OpenIcon = "icon-article";
 
             xNode.Text = xNode.Text.StripFileExtension();
 		}

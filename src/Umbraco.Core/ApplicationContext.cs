@@ -2,9 +2,11 @@
 using System.Configuration;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Web;
 using Umbraco.Core.Configuration;
 using Umbraco.Core.Logging;
 using Umbraco.Core.ObjectResolution;
+using Umbraco.Core.Profiling;
 using Umbraco.Core.Services;
 using Umbraco.Core.Sync;
 
@@ -18,33 +20,64 @@ namespace Umbraco.Core
     /// </remarks>
     public class ApplicationContext : IDisposable
     {
-        
         /// <summary>
         /// Constructor
         /// </summary>
         /// <param name="dbContext"></param>
         /// <param name="serviceContext"></param>
         /// <param name="cache"></param>
-        public ApplicationContext(DatabaseContext dbContext, ServiceContext serviceContext, CacheHelper cache)
-        {
+        /// <param name="logger"></param>
+        public ApplicationContext(DatabaseContext dbContext, ServiceContext serviceContext, CacheHelper cache, ProfilingLogger logger)
+	    {
             if (dbContext == null) throw new ArgumentNullException("dbContext");
             if (serviceContext == null) throw new ArgumentNullException("serviceContext");
             if (cache == null) throw new ArgumentNullException("cache");
+            if (logger == null) throw new ArgumentNullException("logger");
             _databaseContext = dbContext;
             _services = serviceContext;
             ApplicationCache = cache;
+            ProfilingLogger = logger;
 
             Init();
+	    }
+
+	    /// <summary>
+        /// Constructor
+        /// </summary>
+        /// <param name="dbContext"></param>
+        /// <param name="serviceContext"></param>
+        /// <param name="cache"></param>
+        [Obsolete("Use the other constructor specifying a ProfilingLogger instead")]
+        public ApplicationContext(DatabaseContext dbContext, ServiceContext serviceContext, CacheHelper cache)
+            : this(dbContext, serviceContext, cache, 
+                new ProfilingLogger(LoggerResolver.Current.Logger, ProfilerResolver.Current.Profiler))
+        {
         }
 
         /// <summary>
         /// Creates a basic app context
         /// </summary>
         /// <param name="cache"></param>
+        [Obsolete("Use the other constructor specifying a ProfilingLogger instead")]
         public ApplicationContext(CacheHelper cache)
         {
+            if (cache == null) throw new ArgumentNullException("cache");
             ApplicationCache = cache;
+            ProfilingLogger = new ProfilingLogger(LoggerResolver.Current.Logger, ProfilerResolver.Current.Profiler);
+            Init();
+        }
 
+	    /// <summary>
+	    /// Creates a basic app context
+	    /// </summary>
+	    /// <param name="cache"></param>
+	    /// <param name="logger"></param>
+	    public ApplicationContext(CacheHelper cache, ProfilingLogger logger)
+        {
+	        if (cache == null) throw new ArgumentNullException("cache");
+	        if (logger == null) throw new ArgumentNullException("logger");
+	        ApplicationCache = cache;
+	        ProfilingLogger = logger;
             Init();
         }
 
@@ -84,6 +117,7 @@ namespace Umbraco.Core
 	    /// <remarks>
 	    /// This is NOT thread safe 
 	    /// </remarks>
+        [Obsolete("Use the other method specifying an ProfilingLogger instead")]
 	    public static ApplicationContext EnsureContext(DatabaseContext dbContext, ServiceContext serviceContext, CacheHelper cache, bool replaceContext)
         {
             if (Current != null)
@@ -92,6 +126,33 @@ namespace Umbraco.Core
                     return Current;
             }
             var ctx = new ApplicationContext(dbContext, serviceContext, cache);
+            Current = ctx;
+            return Current;
+        }
+
+	    /// <summary>
+	    /// A method used to create and ensure that a global ApplicationContext singleton is created.
+	    /// </summary>
+	    /// <param name="cache"></param>
+	    /// <param name="logger"></param>
+	    /// <param name="replaceContext">
+	    /// If set to true will replace the current singleton instance - This should only be used for unit tests or on app 
+	    /// startup if for some reason the boot manager is not the umbraco boot manager.
+	    /// </param>
+	    /// <param name="dbContext"></param>
+	    /// <param name="serviceContext"></param>
+	    /// <returns></returns>
+	    /// <remarks>
+	    /// This is NOT thread safe 
+	    /// </remarks>
+        public static ApplicationContext EnsureContext(DatabaseContext dbContext, ServiceContext serviceContext, CacheHelper cache, ProfilingLogger logger, bool replaceContext)
+        {
+            if (Current != null)
+            {
+                if (!replaceContext)
+                    return Current;
+            }
+            var ctx = new ApplicationContext(dbContext, serviceContext, cache, logger);
             Current = ctx;
             return Current;
         }
@@ -109,7 +170,13 @@ namespace Umbraco.Core
 		/// </remarks>
 		public CacheHelper ApplicationCache { get; private set; }
 
-    	// IsReady is set to true by the boot manager once it has successfully booted
+        /// <summary>
+        /// Exposes the global ProfilingLogger - this should generally not be accessed via the UmbracoContext and should normally just be exposed 
+        /// on most base classes or injected with IoC
+        /// </summary>
+        public ProfilingLogger ProfilingLogger { get; private set; }
+
+	    // IsReady is set to true by the boot manager once it has successfully booted
         // note - the original umbraco module checks on content.Instance in umbraco.dll
         //   now, the boot task that setup the content store ensures that it is ready
         bool _isReady = false;
@@ -148,6 +215,25 @@ namespace Umbraco.Core
             get { return _configured.Value; }
         }
 
+        /// <summary>
+        /// If the db is configured, there is a database context and there is an umbraco schema, but we are not 'configured' , then it means we are upgrading
+        /// </summary>
+	    public bool IsUpgrading
+	    {
+            get
+            {
+                if (IsConfigured == false 
+                    && DatabaseContext != null 
+                    && DatabaseContext.IsDatabaseConfigured)
+                {
+                    var schemaresult = DatabaseContext.ValidateDatabaseSchema();
+                    if (schemaresult.ValidTables.Count > 0) return true;
+                }
+
+                return false;
+            }
+	    }
+
 	    /// <summary>
         /// The application url.
         /// </summary>
@@ -174,43 +260,67 @@ namespace Umbraco.Core
         {
             get
             {
-                // if initialized, return
-                if (_umbracoApplicationUrl != null) return _umbracoApplicationUrl;
-
-                // try settings
-                ServerEnvironmentHelper.TrySetApplicationUrlFromSettings(this, UmbracoConfig.For.UmbracoSettings());
-
-                // and return what we have, may be null
+                ApplicationUrlHelper.EnsureApplicationUrl(this);
                 return _umbracoApplicationUrl;
-            }
-            set
-            {
-                _umbracoApplicationUrl = value;
             }
         }
 
-        internal string _umbracoApplicationUrl; // internal for tests
+	    // ReSharper disable once InconsistentNaming
+	    internal string _umbracoApplicationUrl;
 
         private Lazy<bool> _configured;
         internal MainDom MainDom { get; private set; }
        
-        private void Init()
-        {
-            MainDom = new MainDom();
+	    private void Init()
+		{
+            MainDom = new MainDom(ProfilingLogger.Logger);
             MainDom.Acquire();
+            
             //Create the lazy value to resolve whether or not the application is 'configured'
             _configured = new Lazy<bool>(() =>
             {
-                var configStatus = ConfigurationStatus;
-                var currentVersion = UmbracoVersion.Current.ToString(3);
-                var ok = configStatus == currentVersion;
-                if (ok == false)
+                try
                 {
-                    LogHelper.Debug<ApplicationContext>("CurrentVersion different from configStatus: '" + currentVersion + "','" + configStatus + "'");
+                    var configStatus = ConfigurationStatus;
+                    var currentVersion = UmbracoVersion.GetSemanticVersion();
+
+                    var ok =
+                        //we are not configured if this is null    
+                        string.IsNullOrWhiteSpace(configStatus) == false
+                        //they must match
+                        && configStatus == currentVersion;
+
+                    if (ok)
+                    {
+                        //The versions are the same in config, but are they the same in the database. We can only check this
+                        // if we have a db context available, if we don't then we are not installed anyways
+                        if (DatabaseContext.IsDatabaseConfigured && DatabaseContext.CanConnect)
+                        {
+                            var found = Services.MigrationEntryService.FindEntry(GlobalSettings.UmbracoMigrationName, UmbracoVersion.GetSemanticVersion());
+                            if (found == null)
+                            {
+                                //we haven't executed this migration in this environment, so even though the config versions match, 
+                                // this db has not been updated.
+                                ProfilingLogger.Logger.Debug<ApplicationContext>(string.Format("The migration for version: '{0} has not been executed, there is no record in the database", currentVersion.ToSemanticString()));
+                                ok = false;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        ProfilingLogger.Logger.Debug<ApplicationContext>(string.Format("CurrentVersion different from configStatus: '{0}','{1}'", currentVersion.ToSemanticString(), configStatus));
+                    }
+
+                    return ok;
                 }
-                return ok;
-            });
-        }
+                catch (Exception ex)
+                {
+                    LogHelper.Error<ApplicationContext>("Error determining if application is configured, returning false", ex);
+                    return false;
+                }
+
+            }); 
+		}
 
 		private string ConfigurationStatus
 		{
@@ -267,6 +377,11 @@ namespace Umbraco.Core
 			internal set { _services = value; }
 		}
 
+	    internal ServerRole GetCurrentServerRole()
+	    {
+	        var registrar = ServerRegistrarResolver.Current.Registrar as IServerRegistrar2;
+            return registrar == null ? ServerRole.Unknown : registrar.GetCurrentServerRole();
+	    }
 
         private volatile bool _disposed;
         private readonly ReaderWriterLockSlim _disposalLocker = new ReaderWriterLockSlim();
@@ -291,7 +406,8 @@ namespace Umbraco.Core
                 //clear the cache
                 if (ApplicationCache != null)
                 {
-                    ApplicationCache.ClearAllCache();    
+                    ApplicationCache.RuntimeCache.ClearAllCache();
+                    ApplicationCache.IsolatedRuntimeCache.ClearAllCaches();
                 }
                 //reset all resolvers
                 ResolverCollection.ResetAll();
@@ -302,7 +418,7 @@ namespace Umbraco.Core
                 this.ApplicationCache = null;
                 if (_databaseContext != null) //need to check the internal field here
                 {
-                    if (DatabaseContext.IsDatabaseConfigured)
+                    if (DatabaseContext.IsDatabaseConfigured && DatabaseContext.Database != null)
                     {
                         DatabaseContext.Database.Dispose();       
                     }                    

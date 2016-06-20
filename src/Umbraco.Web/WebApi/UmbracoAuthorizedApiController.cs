@@ -18,24 +18,27 @@ namespace Umbraco.Web.WebApi
     [IsBackOffice]
     [UmbracoUserTimeoutFilter]
     [UmbracoAuthorize]
+    [DisableBrowserCache]
     public abstract class UmbracoAuthorizedApiController : UmbracoApiController
     {
         protected UmbracoAuthorizedApiController()
         {
-            
         }
 
-        protected UmbracoAuthorizedApiController(UmbracoContext umbracoContext)
-            : base(umbracoContext)
+        protected UmbracoAuthorizedApiController(UmbracoContext umbracoContext) : base(umbracoContext)
         {
         }
-        
+
+        protected UmbracoAuthorizedApiController(UmbracoContext umbracoContext, UmbracoHelper umbracoHelper) : base(umbracoContext, umbracoHelper)
+        {
+        }
+
         private bool _userisValidated = false;
         
         /// <summary>
         /// Returns the currently logged in Umbraco User
         /// </summary>
-        [Obsolete("This should no longer be used since it returns the legacy user object, use The Security.CurrentUser instead to return the proper user object")]
+        [Obsolete("This should no longer be used since it returns the legacy user object, use The Security.CurrentUser instead to return the proper user object, or Security.GetUserId() if you want to just get the user id")]
         protected User UmbracoUser
         {
             get

@@ -43,15 +43,15 @@ namespace umbraco.BusinessLogic.Actions
             ReRegisterActionsAndHandlers();
         }
 
-		/// <summary>
-		/// This is used when an IAction or IActionHandler is installed into the system
-		/// and needs to be loaded into memory.
-		/// </summary>
-		/// <remarks>
-		/// TODO: this shouldn't be needed... we should restart the app pool when a package is installed!
-		/// </remarks>
-		public static void ReRegisterActionsAndHandlers()
-		{
+        /// <summary>
+        /// This is used when an IAction or IActionHandler is installed into the system
+        /// and needs to be loaded into memory.
+        /// </summary>
+        /// <remarks>
+        /// TODO: this shouldn't be needed... we should restart the app pool when a package is installed!
+        /// </remarks>
+        public static void ReRegisterActionsAndHandlers()
+        {
             lock (Lock)
             {
                 // NOTE use the DirtyBackdoor to change the resolution configuration EXCLUSIVELY
@@ -59,6 +59,7 @@ namespace umbraco.BusinessLogic.Actions
                 // the whole resolution system is locked => nothing can work properly => deadlocks
 
                 var newResolver = new ActionsResolver(
+                    new ActivatorServiceProvider(), LoggerResolver.Current.Logger,
                         () => TypeFinder.FindClassesOfType<IAction>(PluginManager.Current.AssembliesToScan));
 
                 using (Umbraco.Core.ObjectResolution.Resolution.DirtyBackdoorToConfiguration)
@@ -68,7 +69,7 @@ namespace umbraco.BusinessLogic.Actions
                 }
 
             }
-		}
+        }
 
         /// <summary>
         /// Jacascript for the contextmenu
@@ -87,10 +88,10 @@ namespace umbraco.BusinessLogic.Actions
         /// <returns></returns>
         public static List<string> GetJavaScriptFileReferences()
         {
-        	return ActionsResolver.Current.Actions
-				.Where(x => !string.IsNullOrWhiteSpace(x.JsSource))
+            return ActionsResolver.Current.Actions
+                .Where(x => !string.IsNullOrWhiteSpace(x.JsSource))
                 .Select(x => x.JsSource).ToList();
-        	//return ActionJsReference;
+            //return ActionJsReference;
         }
 
         /// <summary>
@@ -107,7 +108,7 @@ namespace umbraco.BusinessLogic.Actions
             {
                 string _actionJsList = "";
 
-				foreach (IAction action in ActionsResolver.Current.Actions)
+                foreach (IAction action in ActionsResolver.Current.Actions)
                 {
                     // Adding try/catch so this rutine doesn't fail if one of the actions fail
                     // Add to language JsList
@@ -125,7 +126,7 @@ namespace umbraco.BusinessLogic.Actions
                     }
                     catch (Exception ee)
                     {
-	                    LogHelper.Error<Action>("Error registrering action to javascript", ee);
+                        LogHelper.Error<Action>("Error registrering action to javascript", ee);
                     }
                 }
 
@@ -144,10 +145,10 @@ namespace umbraco.BusinessLogic.Actions
         /// 
         /// </summary>
         /// <returns>An arraylist containing all javascript variables for the contextmenu in the tree</returns>
-		[Obsolete("Use ActionsResolver.Current.Actions instead")]
+        [Obsolete("Use ActionsResolver.Current.Actions instead")]
         public static ArrayList GetAll()
         {
-			return new ArrayList(ActionsResolver.Current.Actions.ToList());
+            return new ArrayList(ActionsResolver.Current.Actions.ToList());
         }
 
         /// <summary>
@@ -161,7 +162,7 @@ namespace umbraco.BusinessLogic.Actions
             List<IAction> list = new List<IAction>();
             foreach (char c in actions.ToCharArray())
             {
-				IAction action = ActionsResolver.Current.Actions.ToList().Find(
+                IAction action = ActionsResolver.Current.Actions.ToList().Find(
                     delegate(IAction a)
                     {
                         return a.Letter == c;
@@ -189,7 +190,7 @@ namespace umbraco.BusinessLogic.Actions
         /// <returns></returns>
         public static List<IAction> GetPermissionAssignable()
         {
-			return ActionsResolver.Current.Actions.ToList().FindAll(
+            return ActionsResolver.Current.Actions.ToList().FindAll(
                 delegate(IAction a)
                 {
                     return (a.CanBePermissionAssigned);

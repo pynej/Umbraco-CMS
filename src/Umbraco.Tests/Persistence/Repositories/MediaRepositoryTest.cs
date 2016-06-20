@@ -1,21 +1,18 @@
 ﻿using System;
 using System.Linq;
 using System.Xml.Linq;
+using Moq;
 using NUnit.Framework;
-using Umbraco.Core;
+using Umbraco.Core.Configuration.UmbracoSettings;
+using Umbraco.Core.Logging;
 using Umbraco.Core.Models;
 using Umbraco.Core.Models.EntityBase;
 using Umbraco.Core.Models.Rdbms;
-using Umbraco.Core.Persistence;
-using Umbraco.Core.Persistence.Caching;
 using Umbraco.Core.Persistence.Querying;
 using Umbraco.Core.Persistence.Repositories;
-using Umbraco.Core.Persistence.SqlSyntax;
 using Umbraco.Core.Persistence.UnitOfWork;
 using Umbraco.Tests.TestHelpers;
 using Umbraco.Tests.TestHelpers.Entities;
-using umbraco.editorControls.tinyMCE3;
-using umbraco.interfaces;
 using Umbraco.Core.Persistence.DatabaseModelDefinitions;
 
 namespace Umbraco.Tests.Persistence.Repositories
@@ -24,9 +21,13 @@ namespace Umbraco.Tests.Persistence.Repositories
     [TestFixture]
     public class MediaRepositoryTest : BaseDatabaseFactoryTest
     {
+        public MediaRepositoryTest()
+        {
+        }
+
         [SetUp]
         public override void Initialize()
-        {           
+        {
             base.Initialize();
 
             CreateTestData();
@@ -34,28 +35,28 @@ namespace Umbraco.Tests.Persistence.Repositories
 
         private MediaRepository CreateRepository(IDatabaseUnitOfWork unitOfWork, out MediaTypeRepository mediaTypeRepository)
         {
-            mediaTypeRepository = new MediaTypeRepository(unitOfWork, NullCacheProvider.Current);
-            var tagRepository = new TagRepository(unitOfWork, NullCacheProvider.Current);
-            var repository = new MediaRepository(unitOfWork, NullCacheProvider.Current, mediaTypeRepository, tagRepository);
+            mediaTypeRepository = new MediaTypeRepository(unitOfWork, CacheHelper, Mock.Of<ILogger>(), SqlSyntax);
+            var tagRepository = new TagRepository(unitOfWork, CacheHelper, Mock.Of<ILogger>(), SqlSyntax);
+            var repository = new MediaRepository(unitOfWork, CacheHelper, Mock.Of<ILogger>(), SqlSyntax, mediaTypeRepository, tagRepository, Mock.Of<IContentSection>());
             return repository;
         }
 
         [Test]
         public void Rebuild_All_Xml_Structures()
         {
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
             {
 
                 var mediaType = mediaTypeRepository.Get(1032);
-                
+
                 for (var i = 0; i < 100; i++)
                 {
                     var image = MockedMedia.CreateMediaImage(mediaType, -1);
                     repository.AddOrUpdate(image);
-                }                
+                }
                 unitOfWork.Commit();
 
                 //delete all xml                 
@@ -71,7 +72,7 @@ namespace Umbraco.Tests.Persistence.Repositories
         [Test]
         public void Rebuild_All_Xml_Structures_For_Content_Type()
         {
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
@@ -80,7 +81,7 @@ namespace Umbraco.Tests.Persistence.Repositories
                 var imageMediaType = mediaTypeRepository.Get(1032);
                 var fileMediaType = mediaTypeRepository.Get(1033);
                 var folderMediaType = mediaTypeRepository.Get(1031);
-                
+
                 for (var i = 0; i < 30; i++)
                 {
                     var image = MockedMedia.CreateMediaImage(imageMediaType, -1);
@@ -102,31 +103,17 @@ namespace Umbraco.Tests.Persistence.Repositories
                 unitOfWork.Database.Execute("DELETE FROM cmsContentXml");
                 Assert.AreEqual(0, unitOfWork.Database.ExecuteScalar<int>("SELECT COUNT(*) FROM cmsContentXml"));
 
-                repository.RebuildXmlStructures(media => new XElement("test"), 10, contentTypeIds: new[] {1032, 1033});
+                repository.RebuildXmlStructures(media => new XElement("test"), 10, contentTypeIds: new[] { 1032, 1033 });
 
                 Assert.AreEqual(62, unitOfWork.Database.ExecuteScalar<int>("SELECT COUNT(*) FROM cmsContentXml"));
             }
         }
 
         [Test]
-        public void Can_Instantiate_Repository_From_Resolver()
-        {
-            // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
-            var unitOfWork = provider.GetUnitOfWork();
-
-            // Act
-            var repository = RepositoryResolver.Current.ResolveByType<IMediaRepository>(unitOfWork);
-
-            // Assert
-            Assert.That(repository, Is.Not.Null);
-        }
-
-        [Test]
         public void Can_Perform_Add_On_MediaRepository()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
@@ -140,9 +127,13 @@ namespace Umbraco.Tests.Persistence.Repositories
                 repository.AddOrUpdate(image);
                 unitOfWork.Commit();
 
+                var fetched = repository.Get(image.Id);
+
                 // Assert
                 Assert.That(mediaType.HasIdentity, Is.True);
                 Assert.That(image.HasIdentity, Is.True);
+
+                TestHelper.AssertAllPropertyValuesAreEquals(image, fetched, "yyyy-MM-dd HH:mm:ss");
             }
         }
 
@@ -150,7 +141,7 @@ namespace Umbraco.Tests.Persistence.Repositories
         public void Can_Perform_Multiple_Adds_On_MediaRepository()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
@@ -181,7 +172,7 @@ namespace Umbraco.Tests.Persistence.Repositories
         public void Can_Perform_Multiple_Adds_On_MediaRepository_With_RepositoryResolver()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
@@ -212,7 +203,7 @@ namespace Umbraco.Tests.Persistence.Repositories
         public void Can_Verify_Fresh_Entity_Is_Not_Dirty()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
@@ -220,7 +211,7 @@ namespace Umbraco.Tests.Persistence.Repositories
 
                 // Act
                 var media = repository.Get(NodeDto.NodeIdSeed + 1);
-                bool dirty = ((ICanBeDirty) media).IsDirty();
+                bool dirty = ((ICanBeDirty)media).IsDirty();
 
                 // Assert
                 Assert.That(dirty, Is.False);
@@ -231,7 +222,7 @@ namespace Umbraco.Tests.Persistence.Repositories
         public void Can_Perform_Update_On_MediaRepository()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
@@ -255,7 +246,7 @@ namespace Umbraco.Tests.Persistence.Repositories
         public void Can_Perform_Delete_On_MediaRepository()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
@@ -279,7 +270,7 @@ namespace Umbraco.Tests.Persistence.Repositories
         public void Can_Perform_Get_On_MediaRepository()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
@@ -306,7 +297,7 @@ namespace Umbraco.Tests.Persistence.Repositories
         public void Can_Perform_GetByQuery_On_MediaRepository()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
@@ -324,15 +315,15 @@ namespace Umbraco.Tests.Persistence.Repositories
         public void Can_Perform_GetPagedResultsByQuery_ForFirstPage_On_MediaRepository()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
             {
                 // Act
                 var query = Query<IMedia>.Builder.Where(x => x.Level == 2);
-                int totalRecords;
-                var result = repository.GetPagedResultsByQuery(query, 0, 1, out totalRecords, "SortOrder", Direction.Ascending);
+                long totalRecords;
+                var result = repository.GetPagedResultsByQuery(query, 0, 1, out totalRecords, "SortOrder", Direction.Ascending, true);
 
                 // Assert
                 Assert.That(totalRecords, Is.GreaterThanOrEqualTo(2));
@@ -345,15 +336,15 @@ namespace Umbraco.Tests.Persistence.Repositories
         public void Can_Perform_GetPagedResultsByQuery_ForSecondPage_On_MediaRepository()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
             {
                 // Act
                 var query = Query<IMedia>.Builder.Where(x => x.Level == 2);
-                int totalRecords;
-                var result = repository.GetPagedResultsByQuery(query, 1, 1, out totalRecords, "SortOrder", Direction.Ascending);
+                long totalRecords;
+                var result = repository.GetPagedResultsByQuery(query, 1, 1, out totalRecords, "SortOrder", Direction.Ascending, true);
 
                 // Assert
                 Assert.That(totalRecords, Is.GreaterThanOrEqualTo(2));
@@ -366,15 +357,15 @@ namespace Umbraco.Tests.Persistence.Repositories
         public void Can_Perform_GetPagedResultsByQuery_WithSinglePage_On_MediaRepository()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
             {
                 // Act
                 var query = Query<IMedia>.Builder.Where(x => x.Level == 2);
-                int totalRecords;
-                var result = repository.GetPagedResultsByQuery(query, 0, 2, out totalRecords, "SortOrder", Direction.Ascending);
+                long totalRecords;
+                var result = repository.GetPagedResultsByQuery(query, 0, 2, out totalRecords, "SortOrder", Direction.Ascending, true);
 
                 // Assert
                 Assert.That(totalRecords, Is.GreaterThanOrEqualTo(2));
@@ -387,15 +378,15 @@ namespace Umbraco.Tests.Persistence.Repositories
         public void Can_Perform_GetPagedResultsByQuery_WithDescendingOrder_On_MediaRepository()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
             {
                 // Act
                 var query = Query<IMedia>.Builder.Where(x => x.Level == 2);
-                int totalRecords;
-                var result = repository.GetPagedResultsByQuery(query, 0, 1, out totalRecords, "SortOrder", Direction.Descending);
+                long totalRecords;
+                var result = repository.GetPagedResultsByQuery(query, 0, 1, out totalRecords, "SortOrder", Direction.Descending, true);
 
                 // Assert
                 Assert.That(totalRecords, Is.GreaterThanOrEqualTo(2));
@@ -408,15 +399,15 @@ namespace Umbraco.Tests.Persistence.Repositories
         public void Can_Perform_GetPagedResultsByQuery_WitAlternateOrder_On_MediaRepository()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
             {
                 // Act
                 var query = Query<IMedia>.Builder.Where(x => x.Level == 2);
-                int totalRecords;
-                var result = repository.GetPagedResultsByQuery(query, 0, 1, out totalRecords, "Name", Direction.Ascending);
+                long totalRecords;
+                var result = repository.GetPagedResultsByQuery(query, 0, 1, out totalRecords, "Name", Direction.Ascending, true);
 
                 // Assert
                 Assert.That(totalRecords, Is.GreaterThanOrEqualTo(2));
@@ -429,15 +420,15 @@ namespace Umbraco.Tests.Persistence.Repositories
         public void Can_Perform_GetPagedResultsByQuery_WithFilterMatchingSome_On_MediaRepository()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
             {
                 // Act
                 var query = Query<IMedia>.Builder.Where(x => x.Level == 2);
-                int totalRecords;
-                var result = repository.GetPagedResultsByQuery(query, 0, 1, out totalRecords, "SortOrder", Direction.Ascending, "File");
+                long totalRecords;
+                var result = repository.GetPagedResultsByQuery(query, 0, 1, out totalRecords, "SortOrder", Direction.Ascending, true, "File");
 
                 // Assert
                 Assert.That(totalRecords, Is.EqualTo(1));
@@ -450,15 +441,15 @@ namespace Umbraco.Tests.Persistence.Repositories
         public void Can_Perform_GetPagedResultsByQuery_WithFilterMatchingAll_On_MediaRepository()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
             {
                 // Act
                 var query = Query<IMedia>.Builder.Where(x => x.Level == 2);
-                int totalRecords;
-                var result = repository.GetPagedResultsByQuery(query, 0, 1, out totalRecords, "SortOrder", Direction.Ascending, "Test");
+                long totalRecords;
+                var result = repository.GetPagedResultsByQuery(query, 0, 1, out totalRecords, "SortOrder", Direction.Ascending, true, "Test");
 
                 // Assert
                 Assert.That(totalRecords, Is.EqualTo(2));
@@ -471,7 +462,7 @@ namespace Umbraco.Tests.Persistence.Repositories
         public void Can_Perform_GetAll_By_Param_Ids_On_MediaRepository()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
@@ -491,7 +482,7 @@ namespace Umbraco.Tests.Persistence.Repositories
         public void Can_Perform_GetAll_On_MediaRepository()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
@@ -511,7 +502,7 @@ namespace Umbraco.Tests.Persistence.Repositories
         public void Can_Perform_Exists_On_MediaRepository()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))
@@ -533,7 +524,7 @@ namespace Umbraco.Tests.Persistence.Repositories
         public void Can_Perform_Count_On_MediaRepository()
         {
             // Arrange
-            var provider = new PetaPocoUnitOfWorkProvider();
+            var provider = new PetaPocoUnitOfWorkProvider(Logger);
             var unitOfWork = provider.GetUnitOfWork();
             MediaTypeRepository mediaTypeRepository;
             using (var repository = CreateRepository(unitOfWork, out mediaTypeRepository))

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using Umbraco.Core;
 using Umbraco.Core.Models;
 
@@ -41,18 +42,20 @@ namespace Umbraco.Tests.TestHelpers.Entities
                                   };
 
             var contentCollection = new PropertyTypeCollection();
-            contentCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "title", Name = "Title", Description = "", HelpText = "", Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
-            contentCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "bodyText", Name = "Body Text", Description = "", HelpText = "", Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -87 });
+            contentCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "title", Name = "Title", Description = "",  Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
+            contentCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "bodyText", Name = "Body Text", Description = "",  Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -87 });
 
             var metaCollection = new PropertyTypeCollection();
-            metaCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "keywords", Name = "Meta Keywords", Description = "", HelpText = "", Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
-            metaCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "description", Name = "Meta Description", Description = "", HelpText = "", Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -89 });
+            metaCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "keywords", Name = "Meta Keywords", Description = "",  Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
+            metaCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "description", Name = "Meta Description", Description = "",  Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -89 });
 
             contentType.PropertyGroups.Add(new PropertyGroup(contentCollection) { Name = "Content", SortOrder = 1 });
             contentType.PropertyGroups.Add(new PropertyGroup(metaCollection) { Name = "Meta", SortOrder = 2 });
 
             //ensure that nothing is marked as dirty
             contentType.ResetDirtyProperties(false);
+
+            contentType.SetDefaultTemplate(new Template("Textpage", "textpage"));
 
             return contentType;
         }
@@ -72,8 +75,8 @@ namespace Umbraco.Tests.TestHelpers.Entities
                                   };
 
             var metaCollection = new PropertyTypeCollection();
-            metaCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "metakeywords", Name = "Meta Keywords", Description = "", HelpText = "", Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
-            metaCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "metadescription", Name = "Meta Description", Description = "", HelpText = "", Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -89 });
+            metaCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "metakeywords", Name = "Meta Keywords", Description = "",  Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
+            metaCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "metadescription", Name = "Meta Description", Description = "",  Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -89 });
 
             contentType.PropertyGroups.Add(new PropertyGroup(metaCollection) { Name = "Meta", SortOrder = 2 });
 
@@ -98,7 +101,7 @@ namespace Umbraco.Tests.TestHelpers.Entities
             };
 
             var metaCollection = new PropertyTypeCollection();
-            metaCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "title", Name = "Title", Description = "", HelpText = "", Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
+            metaCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "title", Name = "Title", Description = "",  Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
 
             contentType.PropertyGroups.Add(new PropertyGroup(metaCollection) { Name = "Content", SortOrder = 2 });
 
@@ -123,8 +126,8 @@ namespace Umbraco.Tests.TestHelpers.Entities
             };
 
             var metaCollection = new PropertyTypeCollection();
-            metaCollection.Add(new PropertyType("seotest", DataTypeDatabaseType.Ntext) { Alias = "seokeywords", Name = "Seo Keywords", Description = "", HelpText = "", Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
-            metaCollection.Add(new PropertyType("seotest", DataTypeDatabaseType.Ntext) { Alias = "seodescription", Name = "Seo Description", Description = "", HelpText = "", Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -89 });
+            metaCollection.Add(new PropertyType("seotest", DataTypeDatabaseType.Ntext) { Alias = "seokeywords", Name = "Seo Keywords", Description = "",  Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
+            metaCollection.Add(new PropertyType("seotest", DataTypeDatabaseType.Ntext) { Alias = "seodescription", Name = "Seo Description", Description = "",  Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -89 });
 
             contentType.PropertyGroups.Add(new PropertyGroup(metaCollection) { Name = "Seo", SortOrder = 5 });
 
@@ -149,14 +152,32 @@ namespace Umbraco.Tests.TestHelpers.Entities
                                   };
 
             var contentCollection = new PropertyTypeCollection();
-            contentCollection.Add(new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext) { Alias = "title", Name = "Title", Description = "", HelpText = "", Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
-            contentCollection.Add(new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext) { Alias = "bodyText", Name = "Body Text", Description = "", HelpText = "", Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -87 });
-            contentCollection.Add(new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext) { Alias = "author", Name = "Author", Description = "Name of the author", HelpText = "", Mandatory = false, SortOrder = 3, DataTypeDefinitionId = -88 });
+            contentCollection.Add(new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext) { Alias = "title", Name = "Title", Description = "",  Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
+            contentCollection.Add(new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext) { Alias = "bodyText", Name = "Body Text", Description = "",  Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -87 });
+            contentCollection.Add(new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext) { Alias = "author", Name = "Author", Description = "Name of the author",  Mandatory = false, SortOrder = 3, DataTypeDefinitionId = -88 });
 
             contentType.PropertyGroups.Add(new PropertyGroup(contentCollection) { Name = "Content", SortOrder = 1 });
 
             //ensure that nothing is marked as dirty
             contentType.ResetDirtyProperties(false);
+
+            return contentType;
+        }
+
+        public static ContentType CreateSimpleContentType2(string alias, string name, IContentType parent = null, bool randomizeAliases = false, string propertyGroupName = "Content")
+        {
+            var contentType = CreateSimpleContentType(alias, name, parent, randomizeAliases, propertyGroupName);
+
+            var propertyType = new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext)
+            {
+                Alias = RandomAlias("gen", randomizeAliases),
+                Name = "Gen",
+                Description = "",
+                Mandatory = false,
+                SortOrder = 1,
+                DataTypeDefinitionId = -88
+            };
+            contentType.AddPropertyType(propertyType);
 
             return contentType;
         }
@@ -175,18 +196,48 @@ namespace Umbraco.Tests.TestHelpers.Entities
 			contentType.Trashed = false;
 			
 			var contentCollection = new PropertyTypeCollection();
-            contentCollection.Add(new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext) { Alias = RandomAlias("title", randomizeAliases), Name = "Title", Description = "", HelpText = "", Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
-            contentCollection.Add(new PropertyType(Constants.PropertyEditors.TinyMCEAlias, DataTypeDatabaseType.Ntext) { Alias = RandomAlias("bodyText", randomizeAliases), Name = "Body Text", Description = "", HelpText = "", Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -87 });
-            contentCollection.Add(new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext) { Alias = RandomAlias("author", randomizeAliases) , Name = "Author", Description = "Name of the author", HelpText = "", Mandatory = false, SortOrder = 3, DataTypeDefinitionId = -88 });
+            contentCollection.Add(new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext) { Alias = RandomAlias("title", randomizeAliases), Name = "Title", Description = "",  Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
+            contentCollection.Add(new PropertyType(Constants.PropertyEditors.TinyMCEAlias, DataTypeDatabaseType.Ntext) { Alias = RandomAlias("bodyText", randomizeAliases), Name = "Body Text", Description = "",  Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -87 });
+            contentCollection.Add(new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext) { Alias = RandomAlias("author", randomizeAliases) , Name = "Author", Description = "Name of the author",  Mandatory = false, SortOrder = 3, DataTypeDefinitionId = -88 });
 
-            contentType.PropertyGroups.Add(new PropertyGroup(contentCollection) { Name = propertyGroupName, SortOrder = 1 });
+            var pg = new PropertyGroup(contentCollection) {Name = propertyGroupName, SortOrder = 1};
+            contentType.PropertyGroups.Add(pg);
 
             //ensure that nothing is marked as dirty
             contentType.ResetDirtyProperties(false);
 
-			return contentType;
-		}	    
+            contentType.SetDefaultTemplate(new Template("Textpage", "textpage"));
 
+			return contentType;
+		}
+
+        public static MediaType CreateSimpleMediaType(string alias, string name, IMediaType parent = null, bool randomizeAliases = false, string propertyGroupName = "Content")
+        {
+            var contentType = parent == null ? new MediaType(-1) : new MediaType(parent, alias);
+
+            contentType.Alias = alias;
+            contentType.Name = name;
+            contentType.Description = "ContentType used for simple text pages";
+            contentType.Icon = ".sprTreeDoc3";
+            contentType.Thumbnail = "doc2.png";
+            contentType.SortOrder = 1;
+            contentType.CreatorId = 0;
+            contentType.Trashed = false;
+
+            var contentCollection = new PropertyTypeCollection();
+            contentCollection.Add(new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext) { Alias = RandomAlias("title", randomizeAliases), Name = "Title", Description = "", Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
+            contentCollection.Add(new PropertyType(Constants.PropertyEditors.TinyMCEAlias, DataTypeDatabaseType.Ntext) { Alias = RandomAlias("bodyText", randomizeAliases), Name = "Body Text", Description = "", Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -87 });
+            contentCollection.Add(new PropertyType(Constants.PropertyEditors.TextboxAlias, DataTypeDatabaseType.Ntext) { Alias = RandomAlias("author", randomizeAliases), Name = "Author", Description = "Name of the author", Mandatory = false, SortOrder = 3, DataTypeDefinitionId = -88 });
+
+            var pg = new PropertyGroup(contentCollection) { Name = propertyGroupName, SortOrder = 1 };
+            contentType.PropertyGroups.Add(pg);
+
+            //ensure that nothing is marked as dirty
+            contentType.ResetDirtyProperties(false);
+
+            return contentType;
+        }
+        
         public static ContentType CreateSimpleContentType(string alias, string name, bool mandatory)
         {
             var contentType = new ContentType(-1)
@@ -202,9 +253,9 @@ namespace Umbraco.Tests.TestHelpers.Entities
             };
 
             var contentCollection = new PropertyTypeCollection();
-            contentCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "title", Name = "Title", Description = "", HelpText = "", Mandatory = mandatory, SortOrder = 1, DataTypeDefinitionId = -88 });
-            contentCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "bodyText", Name = "Body Text", Description = "", HelpText = "", Mandatory = mandatory, SortOrder = 2, DataTypeDefinitionId = -87 });
-            contentCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "author", Name = "Author", Description = "Name of the author", HelpText = "", Mandatory = mandatory, SortOrder = 3, DataTypeDefinitionId = -88 });
+            contentCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "title", Name = "Title", Description = "",  Mandatory = mandatory, SortOrder = 1, DataTypeDefinitionId = -88 });
+            contentCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "bodyText", Name = "Body Text", Description = "",  Mandatory = mandatory, SortOrder = 2, DataTypeDefinitionId = -87 });
+            contentCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "author", Name = "Author", Description = "Name of the author",  Mandatory = mandatory, SortOrder = 3, DataTypeDefinitionId = -88 });
 
             contentType.PropertyGroups.Add(new PropertyGroup(contentCollection) { Name = "Content", SortOrder = 1 });
 
@@ -293,7 +344,8 @@ namespace Umbraco.Tests.TestHelpers.Entities
             contentCollection.Add(new PropertyType(Constants.PropertyEditors.NoEditAlias, DataTypeDatabaseType.Nvarchar) { Alias = "label", Name = "Label", Mandatory = false, SortOrder = 7, DataTypeDefinitionId = -92 });
             contentCollection.Add(new PropertyType(Constants.PropertyEditors.DateTimeAlias, DataTypeDatabaseType.Date) { Alias = "dateTime", Name = "Date Time", Mandatory = false, SortOrder = 8, DataTypeDefinitionId = -36 });
             contentCollection.Add(new PropertyType(Constants.PropertyEditors.ColorPickerAlias, DataTypeDatabaseType.Nvarchar) { Alias = "colorPicker", Name = "Color Picker", Mandatory = false, SortOrder = 9, DataTypeDefinitionId = -37 });
-            contentCollection.Add(new PropertyType(Constants.PropertyEditors.FolderBrowserAlias, DataTypeDatabaseType.Nvarchar) { Alias = "folderBrowser", Name = "Folder Browser", Mandatory = false, SortOrder = 10, DataTypeDefinitionId = -38 });
+            //that one is gone in 7.4
+            //contentCollection.Add(new PropertyType(Constants.PropertyEditors.FolderBrowserAlias, DataTypeDatabaseType.Nvarchar) { Alias = "folderBrowser", Name = "Folder Browser", Mandatory = false, SortOrder = 10, DataTypeDefinitionId = -38 });
             contentCollection.Add(new PropertyType(Constants.PropertyEditors.DropDownListMultipleAlias, DataTypeDatabaseType.Nvarchar) { Alias = "ddlMultiple", Name = "Dropdown List Multiple", Mandatory = false, SortOrder = 11, DataTypeDefinitionId = -39 });
             contentCollection.Add(new PropertyType(Constants.PropertyEditors.RadioButtonListAlias, DataTypeDatabaseType.Nvarchar) { Alias = "rbList", Name = "Radio Button List", Mandatory = false, SortOrder = 12, DataTypeDefinitionId = -40 });
             contentCollection.Add(new PropertyType(Constants.PropertyEditors.DateAlias, DataTypeDatabaseType.Date) { Alias = "date", Name = "Date", Mandatory = false, SortOrder = 13, DataTypeDefinitionId = -41 });
@@ -330,8 +382,8 @@ namespace Umbraco.Tests.TestHelpers.Entities
                                 };
 
             var contentCollection = new PropertyTypeCollection();
-            contentCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "title", Name = "Title", Description = "", HelpText = "", Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
-            contentCollection.Add(new PropertyType("test", DataTypeDatabaseType.Nvarchar) { Alias = "videoFile", Name = "Video File", Description = "", HelpText = "", Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -90 });
+            contentCollection.Add(new PropertyType("test", DataTypeDatabaseType.Ntext) { Alias = "title", Name = "Title", Description = "",  Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
+            contentCollection.Add(new PropertyType("test", DataTypeDatabaseType.Nvarchar) { Alias = "videoFile", Name = "Video File", Description = "",  Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -90 });
 
             mediaType.PropertyGroups.Add(new PropertyGroup(contentCollection) { Name = "Media", SortOrder = 1 });
 
@@ -356,11 +408,11 @@ namespace Umbraco.Tests.TestHelpers.Entities
             };
 
             var contentCollection = new PropertyTypeCollection();
-            contentCollection.Add(new PropertyType(Constants.PropertyEditors.UploadFieldAlias, DataTypeDatabaseType.Nvarchar) { Alias = Constants.Conventions.Media.File, Name = "File", Description = "", HelpText = "", Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -90 });
-            contentCollection.Add(new PropertyType(Constants.PropertyEditors.NoEditAlias, DataTypeDatabaseType.Integer) { Alias = Constants.Conventions.Media.Width, Name = "Width", Description = "", HelpText = "", Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -90 });
-            contentCollection.Add(new PropertyType(Constants.PropertyEditors.NoEditAlias, DataTypeDatabaseType.Integer) { Alias = Constants.Conventions.Media.Height, Name = "Height", Description = "", HelpText = "", Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -90 });
-            contentCollection.Add(new PropertyType(Constants.PropertyEditors.NoEditAlias, DataTypeDatabaseType.Integer) { Alias = Constants.Conventions.Media.Bytes, Name = "Bytes", Description = "", HelpText = "", Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -90 });
-            contentCollection.Add(new PropertyType(Constants.PropertyEditors.NoEditAlias, DataTypeDatabaseType.Integer) { Alias = Constants.Conventions.Media.Extension, Name = "File Extension", Description = "", HelpText = "", Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -90 });
+            contentCollection.Add(new PropertyType(Constants.PropertyEditors.UploadFieldAlias, DataTypeDatabaseType.Nvarchar) { Alias = Constants.Conventions.Media.File, Name = "File", Description = "",  Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -90 });
+            contentCollection.Add(new PropertyType(Constants.PropertyEditors.NoEditAlias, DataTypeDatabaseType.Integer) { Alias = Constants.Conventions.Media.Width, Name = "Width", Description = "",  Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -90 });
+            contentCollection.Add(new PropertyType(Constants.PropertyEditors.NoEditAlias, DataTypeDatabaseType.Integer) { Alias = Constants.Conventions.Media.Height, Name = "Height", Description = "",  Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -90 });
+            contentCollection.Add(new PropertyType(Constants.PropertyEditors.NoEditAlias, DataTypeDatabaseType.Integer) { Alias = Constants.Conventions.Media.Bytes, Name = "Bytes", Description = "",  Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -90 });
+            contentCollection.Add(new PropertyType(Constants.PropertyEditors.NoEditAlias, DataTypeDatabaseType.Integer) { Alias = Constants.Conventions.Media.Extension, Name = "File Extension", Description = "",  Mandatory = false, SortOrder = 2, DataTypeDefinitionId = -90 });
 
             mediaType.PropertyGroups.Add(new PropertyGroup(contentCollection) { Name = "Media", SortOrder = 1 });
 
@@ -396,6 +448,22 @@ namespace Umbraco.Tests.TestHelpers.Entities
 
             return contentType;
         }
+
+        public static void EnsureAllIds(ContentTypeCompositionBase contentType, int seedId)
+        {
+            //ensure everything has ids
+            contentType.Id = seedId;
+            var itemid = seedId + 1;
+            foreach (var propertyGroup in contentType.PropertyGroups)
+            {
+                propertyGroup.Id = itemid++;
+            }
+            foreach (var propertyType in contentType.PropertyTypes)
+            {
+                propertyType.Id = itemid++;
+            }
+        }
+
 
         private static string RandomAlias(string alias, bool randomizeAliases)
         {

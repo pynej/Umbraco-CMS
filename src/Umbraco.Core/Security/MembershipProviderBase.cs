@@ -17,6 +17,19 @@ namespace Umbraco.Core.Security
     /// </summary>
     public abstract class MembershipProviderBase : MembershipProvider
     {
+
+        public string HashPasswordForStorage(string password)
+        {
+            string salt;
+            var hashed = EncryptOrHashNewPassword(password, out salt);
+            return FormatPasswordForStorage(hashed, salt);
+        }
+
+        public bool VerifyPassword(string password, string hashedPassword)
+        {
+            return CheckPassword(password, hashedPassword);
+        }
+
         /// <summary>
         /// Providers can override this setting, default is 7
         /// </summary>
@@ -212,7 +225,7 @@ namespace Umbraco.Core.Security
             _enablePasswordReset = config.GetValue("enablePasswordReset", false);
             _requiresQuestionAndAnswer = config.GetValue("requiresQuestionAndAnswer", false);
             _requiresUniqueEmail = config.GetValue("requiresUniqueEmail", true);
-            _maxInvalidPasswordAttempts = GetIntValue(config, "maxInvalidPasswordAttempts", 20, false, 0);
+            _maxInvalidPasswordAttempts = GetIntValue(config, "maxInvalidPasswordAttempts", 5, false, 0);
             _passwordAttemptWindow = GetIntValue(config, "passwordAttemptWindow", 10, false, 0);
             _minRequiredPasswordLength = GetIntValue(config, "minRequiredPasswordLength", DefaultMinPasswordLength, true, 0x80);
             _minRequiredNonAlphanumericCharacters = GetIntValue(config, "minRequiredNonalphanumericCharacters", DefaultMinNonAlphanumericChars, true, 0x80);
@@ -746,12 +759,13 @@ namespace Umbraco.Core.Security
 
             //This is the correct way to implement this (as per the sql membership provider)
 
-            switch ((int)PasswordFormat)
+            switch (PasswordFormat)
             {
-                case 0:
+                case MembershipPasswordFormat.Clear:
                     return pass;
-                case 1:
+                case MembershipPasswordFormat.Hashed:
                     throw new ProviderException("Provider can not decrypt hashed password");
+                case MembershipPasswordFormat.Encrypted:
                 default:
                     var bytes = DecryptPassword(Convert.FromBase64String(pass));
                     return bytes == null ? null : Encoding.Unicode.GetString(bytes, 16, bytes.Length - 16);

@@ -1,24 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
+using System.ComponentModel;
 using System.Linq;
 using System.Web;
 using System.Web.Security;
-using Newtonsoft.Json.Linq;
+using AutoMapper;
 using Umbraco.Core;
-using Umbraco.Core.Cache;
-using Umbraco.Core.Configuration;
 using Umbraco.Core.Logging;
 using Umbraco.Core.Models.Membership;
 using Umbraco.Core.Security;
-using Umbraco.Web.Models;
-using Umbraco.Web.Models.ContentEditing;
-using umbraco;
-using umbraco.DataLayer;
+using Microsoft.AspNet.Identity.Owin;
+using Microsoft.Owin;
 using umbraco.businesslogic.Exceptions;
-using umbraco.providers;
+using Umbraco.Web.Models.ContentEditing;
 using GlobalSettings = Umbraco.Core.Configuration.GlobalSettings;
-using Member = umbraco.cms.businesslogic.member.Member;
 using User = umbraco.BusinessLogic.User;
 
 namespace Umbraco.Web.Security
@@ -35,10 +30,6 @@ namespace Umbraco.Web.Security
         {
             _httpContext = httpContext;
             _applicationContext = applicationContext;
-            //This ensures the dispose method is called when the request terminates, though
-            // we also ensure this happens in the Umbraco module because the UmbracoContext is added to the
-            // http context items.
-            _httpContext.DisposeOnPipelineCompleted(this);
         }
         
         /// <summary>
@@ -70,7 +61,7 @@ namespace Umbraco.Web.Security
         /// Gets the current user.
         /// </summary>
         /// <value>The current user.</value>
-        public IUser CurrentUser
+        public virtual IUser CurrentUser
         {
             get
             {
@@ -89,54 +80,97 @@ namespace Umbraco.Web.Security
             }
         }
 
+        private BackOfficeSignInManager _signInManager;
+        private BackOfficeSignInManager SignInManager
+        {
+            get
+            {
+                if (_signInManager == null)
+                {
+                    var mgr = _httpContext.GetOwinContext().Get<BackOfficeSignInManager>();
+                    if (mgr == null)
+                    {
+                        throw new NullReferenceException("Could not resolve an instance of " + typeof(BackOfficeSignInManager) + " from the " + typeof(IOwinContext));
+                    }
+                    _signInManager = mgr;
+                }
+                return _signInManager;
+            }
+        }
+
+        private BackOfficeUserManager _userManager;
+        protected BackOfficeUserManager UserManager
+        {
+            get
+            {
+                if (_userManager == null)
+                {
+                    var mgr = _httpContext.GetOwinContext().GetUserManager<BackOfficeUserManager>();
+                    if (mgr == null)
+                    {
+                        throw new NullReferenceException("Could not resolve an instance of " + typeof(BackOfficeUserManager) + " from the " + typeof(IOwinContext) + " GetUserManager method");
+                    }
+                    _userManager = mgr;
+                }
+                return _userManager;
+            }
+        }
+
         /// <summary>
         /// Logs a user in.
         /// </summary>
         /// <param name="userId">The user Id</param>
         /// <returns>returns the number of seconds until their session times out</returns>
-        public double PerformLogin(int userId)
+        public virtual double PerformLogin(int userId)
         {
-            var user = _applicationContext.Services.UserService.GetUserById(userId);
-            return PerformLogin(user).GetRemainingAuthSeconds();
+            var owinCtx = _httpContext.GetOwinContext();
+            //ensure it's done for owin too
+            owinCtx.Authentication.SignOut(Constants.Security.BackOfficeExternalAuthenticationType);
+            
+            var user = UserManager.FindByIdAsync(userId).Result;
+            var userData = Mapper.Map<UserData>(user);
+            _httpContext.SetPrincipalForRequest(userData);
+
+            SignInManager.SignInAsync(user, isPersistent: true, rememberBrowser: false).Wait();
+            return TimeSpan.FromMinutes(GlobalSettings.TimeOutInMinutes).TotalSeconds;
         }
 
-        /// <summary>
-        /// Logs the user in
-        /// </summary>
-        /// <param name="user"></param>
-        /// <returns>returns the number of seconds until their session times out</returns>
-        public FormsAuthenticationTicket PerformLogin(IUser user)
+        [Obsolete("This method should not be used, login is performed by the OWIN pipeline, use the overload that returns double and accepts a UserId instead")]
+        public virtual FormsAuthenticationTicket PerformLogin(IUser user)
         {
-            var ticket = _httpContext.CreateUmbracoAuthTicket(new UserData(Guid.NewGuid().ToString("N"))
-            {
-                Id = user.Id,
-                AllowedApplications = user.AllowedSections.ToArray(),
-                RealName = user.Name,
-                //currently we only have one user type!
-                Roles = new[] { user.UserType.Alias },
-                StartContentNode = user.StartContentId,
-                StartMediaNode = user.StartMediaId,
-                Username = user.Username,
-                Culture = ui.Culture(user)
-            });
-            
-            LogHelper.Info<WebSecurity>("User Id: {0} logged in", () => user.Id);
+            //clear the external cookie - we do this first without owin context because we're writing cookies directly to httpcontext 
+            // and cookie handling is different with httpcontext vs webapi and owin, normally we'd just do:
+            //_httpContext.GetOwinContext().Authentication.SignOut(Constants.Security.BackOfficeExternalAuthenticationType);
 
+            var externalLoginCookie = _httpContext.Request.Cookies.Get(Constants.Security.BackOfficeExternalCookieName);
+            if (externalLoginCookie != null)
+            {
+                externalLoginCookie.Expires = DateTime.Now.AddYears(-1);
+                _httpContext.Response.Cookies.Set(externalLoginCookie);
+            }
+
+            //ensure it's done for owin too
+            _httpContext.GetOwinContext().Authentication.SignOut(Constants.Security.BackOfficeExternalAuthenticationType);
+
+            var ticket = _httpContext.CreateUmbracoAuthTicket(Mapper.Map<UserData>(user));
             return ticket;
         }
 
         /// <summary>
         /// Clears the current login for the currently logged in user
         /// </summary>
-        public void ClearCurrentLogin()
+        public virtual void ClearCurrentLogin()
         {
             _httpContext.UmbracoLogout();
+            _httpContext.GetOwinContext().Authentication.SignOut(
+                Core.Constants.Security.BackOfficeAuthenticationType,
+                Core.Constants.Security.BackOfficeExternalAuthenticationType);
         }
 
         /// <summary>
         /// Renews the user's login ticket
         /// </summary>
-        public void RenewLoginTimeout()
+        public virtual void RenewLoginTimeout()
         {
             _httpContext.RenewUmbracoAuthTicket();
         }
@@ -147,7 +181,7 @@ namespace Umbraco.Web.Security
         /// <param name="username"></param>
         /// <param name="password"></param>
         /// <returns></returns>
-        public bool ValidateBackOfficeCredentials(string username, string password)
+        public virtual bool ValidateBackOfficeCredentials(string username, string password)
         {
             var membershipProvider = Core.Security.MembershipProviderExtensions.GetUsersMembershipProvider();
             return membershipProvider != null && membershipProvider.ValidateUser(username, password);
@@ -159,7 +193,7 @@ namespace Umbraco.Web.Security
         /// <param name="username"></param>
         /// <param name="setOnline"></param>
         /// <returns></returns>
-        public MembershipUser GetBackOfficeMembershipUser(string username, bool setOnline)
+        public virtual MembershipUser GetBackOfficeMembershipUser(string username, bool setOnline)
         {
             var membershipProvider = Core.Security.MembershipProviderExtensions.GetUsersMembershipProvider();
             return membershipProvider != null ? membershipProvider.GetUser(username, setOnline) : null;
@@ -283,7 +317,7 @@ namespace Umbraco.Web.Security
         /// Gets the currnet user's id.
         /// </summary>
         /// <returns></returns>
-        public int GetUserId()
+        public virtual int GetUserId()
         {
             var identity = _httpContext.GetCurrentIdentity(false);
             if (identity == null)
@@ -295,7 +329,7 @@ namespace Umbraco.Web.Security
         /// Returns the current user's unique session id - used to mitigate csrf attacks or any other reason to validate a request
         /// </summary>
         /// <returns></returns>
-        public string GetSessionId()
+        public virtual string GetSessionId()
         {
             var identity = _httpContext.GetCurrentIdentity(false);
             if (identity == null)
@@ -318,7 +352,7 @@ namespace Umbraco.Web.Security
         /// Validates the currently logged in user and ensures they are not timed out
         /// </summary>
         /// <returns></returns>
-        public bool ValidateCurrentUser()
+        public virtual bool ValidateCurrentUser()
         {
             var result = ValidateCurrentUser(false);
             return result == ValidateRequestAttempt.Success; 
@@ -335,7 +369,7 @@ namespace Umbraco.Web.Security
             // since the authentication happens in the Module, that authentication also checks the ticket expiry. We don't 
             // need to check it a second time because that requires another decryption phase and nothing can tamper with it during the request.
 
-            if (_httpContext.User.Identity.IsAuthenticated == false) 
+            if (IsAuthenticated() == false) 
             {
                 //There is no user
                 if (throwExceptions) throw new InvalidOperationException("The user has no umbraco contextid - try logging in");
@@ -415,11 +449,21 @@ namespace Umbraco.Web.Security
             {
             }
         }
-        
+
+        /// <summary>
+        /// Ensures that a back office user is logged in
+        /// </summary>
+        /// <returns></returns>
+        public bool IsAuthenticated()
+        {
+            return _httpContext.User.Identity.IsAuthenticated && _httpContext.GetCurrentIdentity(false) != null;
+        }
+
         protected override void DisposeResources()
         {
             _httpContext = null;
-            _applicationContext = null;
         }
+
+        
     }
 }

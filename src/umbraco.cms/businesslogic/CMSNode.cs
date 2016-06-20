@@ -7,7 +7,7 @@ using Umbraco.Core;
 using Umbraco.Core.Models;
 using Umbraco.Core.Models.EntityBase;
 using Umbraco.Core.Persistence;
-using Umbraco.Core.Persistence.Caching;
+
 using umbraco.cms.businesslogic.web;
 using umbraco.DataLayer;
 using umbraco.BusinessLogic;
@@ -607,10 +607,7 @@ order by level,sortOrder";
                 {
                     c.Move(this);
                 }
-
-                //TODO: Properly refactor this, we're just clearing the cache so the changes will also be visible in the backoffice
-                InMemoryCacheProvider.Current.Clear();
-
+                
                 FireAfterMove(e);
             }
         }
@@ -620,6 +617,7 @@ order by level,sortOrder";
         /// </summary>
         /// <param name="NewParentId">Target CMSNode id</param>
         [Obsolete("Obsolete, Use Umbraco.Core.Services.ContentService.Move() or Umbraco.Core.Services.MediaService.Move()", false)]
+        [EditorBrowsable(EditorBrowsableState.Never)]
         public virtual void Move(int newParentId)
         {
             CMSNode parent = new CMSNode(newParentId);
@@ -799,6 +797,7 @@ order by level,sortOrder";
             internal set { _parentid = value; }
         }
 
+        private IUmbracoEntity _parent;
         /// <summary>
         /// Given the hierarchical tree structure a CMSNode has only one newParent but can have many children
         /// </summary>
@@ -808,15 +807,21 @@ order by level,sortOrder";
             get
             {
                 if (Level == 1) throw new ArgumentException("No newParent node");
-                return new CMSNode(_parentid);
+                if (_parent == null)
+                {
+                    _parent = ApplicationContext.Current.Services.EntityService.Get(_parentid);
+                }
+                return new CMSNode(_parent);
             }
             set
             {
                 _parentid = value.Id;
-                SqlHelper.ExecuteNonQuery("update umbracoNode set parentId = " + value.Id.ToString() + " where id = " + this.Id.ToString());
+                SqlHelper.ExecuteNonQuery("update umbracoNode set parentId = " + value.Id + " where id = " + this.Id.ToString());
 
                 if (Entity != null)
                     Entity.ParentId = value.Id;
+
+                _parent = value.Entity;
             }
         }
 
@@ -1184,8 +1189,9 @@ order by level,sortOrder";
         {
             // attributes
             x.Attributes.Append(xmlHelper.addAttribute(xd, "id", this.Id.ToString()));
+            x.Attributes.Append(xmlHelper.addAttribute(xd, "key", this.UniqueId.ToString()));
             if (this.Level > 1)
-                x.Attributes.Append(xmlHelper.addAttribute(xd, "parentID", this.Parent.Id.ToString()));
+                x.Attributes.Append(xmlHelper.addAttribute(xd, "parentID", this.ParentId.ToString()));
             else
                 x.Attributes.Append(xmlHelper.addAttribute(xd, "parentID", "-1"));
             x.Attributes.Append(xmlHelper.addAttribute(xd, "level", this.Level.ToString()));

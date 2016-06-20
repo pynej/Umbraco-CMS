@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using Umbraco.Core.Persistence.DatabaseAnnotations;
@@ -31,6 +32,13 @@ namespace Umbraco.Core.Persistence.SqlSyntax
                                   FormatPrimaryKey,
                                   FormatIdentity
                               };
+
+            //defaults for all providers
+            StringLengthColumnDefinitionFormat = StringLengthUnicodeColumnDefinitionFormat;
+            StringColumnDefinition = string.Format(StringLengthColumnDefinitionFormat, DefaultStringLength);
+            DecimalColumnDefinition = string.Format(DecimalColumnDefinitionFormat, DefaultDecimalPrecision, DefaultDecimalScale);
+
+            InitColumnTypeMap();
         }
 
         public string GetWildcardPlaceholder()
@@ -40,9 +48,12 @@ namespace Umbraco.Core.Persistence.SqlSyntax
 
         public string StringLengthNonUnicodeColumnDefinitionFormat = "VARCHAR({0})";
         public string StringLengthUnicodeColumnDefinitionFormat = "NVARCHAR({0})";
+        public string DecimalColumnDefinitionFormat = "DECIMAL({0},{1})";
 
         public string DefaultValueFormat = "DEFAULT ({0})";
         public int DefaultStringLength = 255;
+        public int DefaultDecimalPrecision = 20;
+        public int DefaultDecimalScale = 9;
 
         //Set by Constructor
         public string StringColumnDefinition;
@@ -54,7 +65,7 @@ namespace Umbraco.Core.Persistence.SqlSyntax
         public string GuidColumnDefinition = "GUID";
         public string BoolColumnDefinition = "BOOL";
         public string RealColumnDefinition = "DOUBLE";
-        public string DecimalColumnDefinition = "DECIMAL";
+        public string DecimalColumnDefinition;
         public string BlobColumnDefinition = "BLOB";
         public string DateTimeColumnDefinition = "DATETIME";
         public string TimeColumnDefinition = "DATETIME";
@@ -251,6 +262,23 @@ namespace Umbraco.Core.Persistence.SqlSyntax
             return true;
         }
 
+        /// <summary>
+        /// This is used ONLY if we need to format datetime without using SQL parameters (i.e. during migrations)
+        /// </summary>
+        /// <param name="date"></param>
+        /// <param name="includeTime"></param>
+        /// <returns></returns>
+        /// <remarks>
+        /// MSSQL has a DateTime standard that is unambiguous and works on all servers:
+        /// YYYYMMDD HH:mm:ss
+        /// </remarks>
+        public virtual string FormatDateTime(DateTime date, bool includeTime = true)
+        {
+            // need CultureInfo.InvariantCulture because ":" here is the "time separator" and
+            // may be converted to something else in different cultures (eg "." in DK).
+            return date.ToString(includeTime ? "yyyyMMdd HH:mm:ss" : "yyyyMMdd", CultureInfo.InvariantCulture);
+        }
+
         public virtual string Format(TableDefinition table)
         {
             var statement = string.Format(CreateTable, GetQuotedTableName(table.Name), Format(table.Columns));
@@ -294,7 +322,7 @@ namespace Umbraco.Core.Persistence.SqlSyntax
                                  GetQuotedColumnName(foreignKey.ForeignColumns.First()),
                                  GetQuotedTableName(foreignKey.PrimaryTable),
                                  GetQuotedColumnName(foreignKey.PrimaryColumns.First()),
-                                 FormatCascade("DELETE", foreignKey.OnDelete), 
+                                 FormatCascade("DELETE", foreignKey.OnDelete),
                                  FormatCascade("UPDATE", foreignKey.OnUpdate));
         }
 
@@ -303,7 +331,7 @@ namespace Umbraco.Core.Persistence.SqlSyntax
             var sb = new StringBuilder();
             foreach (var column in columns)
             {
-                sb.Append(Format(column) +",\n");
+                sb.Append(Format(column) + ",\n");
             }
             return sb.ToString().TrimEnd(",\n");
         }
@@ -403,14 +431,21 @@ namespace Umbraco.Core.Persistence.SqlSyntax
                 return GetSpecialDbType(column.DbType);
             }
 
-            Type type = column.Type.HasValue 
+            Type type = column.Type.HasValue
                 ? DbTypeMap.ColumnDbTypeMap.First(x => x.Value == column.Type.Value).Key
                 : column.PropertyType;
 
-            if (type == typeof (string))
+            if (type == typeof(string))
             {
                 var valueOrDefault = column.Size != default(int) ? column.Size : DefaultStringLength;
                 return string.Format(StringLengthColumnDefinitionFormat, valueOrDefault);
+            }
+
+            if (type == typeof(decimal))
+            {
+                var precision = column.Size != default(int) ? column.Size : DefaultDecimalPrecision;
+                var scale = column.Precision != default(int) ? column.Precision : DefaultDecimalScale;
+                return string.Format(DecimalColumnDefinitionFormat, precision, scale);
             }
 
             string definition = DbTypeMap.ColumnTypeMap.First(x => x.Key == type).Value;
@@ -442,9 +477,9 @@ namespace Umbraco.Core.Persistence.SqlSyntax
             if (column.DefaultValue == null)
                 return string.Empty;
 
-            // TODO: Actually use the SystemMethods on the DTO. For now I've put a hack in to catch getdate(), not using the others at the moment
+            //hack - probably not needed with latest changes
             if (column.DefaultValue.ToString().ToLower().Equals("getdate()".ToLower()))
-                return string.Format(DefaultValueFormat, column.DefaultValue);
+                column.DefaultValue = SystemMethods.CurrentDateTime;
 
             // see if this is for a system method
             if (column.DefaultValue is SystemMethods)
@@ -501,5 +536,9 @@ namespace Umbraco.Core.Persistence.SqlSyntax
         public virtual string CreateConstraint { get { return "ALTER TABLE {0} ADD CONSTRAINT {1} {2} ({3})"; } }
         public virtual string DeleteConstraint { get { return "ALTER TABLE {0} DROP CONSTRAINT {1}"; } }
         public virtual string CreateForeignKeyConstraint { get { return "ALTER TABLE {0} ADD CONSTRAINT {1} FOREIGN KEY ({2}) REFERENCES {3} ({4}){5}{6}"; } }
+
+        public virtual string ConvertIntegerToOrderableString { get { return "REPLACE(STR({0}, 8), SPACE(1), '0')"; } }
+        public virtual string ConvertDateToOrderableString { get { return "CONVERT(nvarchar, {0}, 102)"; } }
+        public virtual string ConvertDecimalToOrderableString { get { return "REPLACE(STR({0}, 20, 9), SPACE(1), '0')"; } }
     }
 }

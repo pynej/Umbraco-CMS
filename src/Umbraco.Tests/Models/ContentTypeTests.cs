@@ -45,7 +45,7 @@ namespace Umbraco.Tests.Models
             }
             //add a property type without a property group
             contentType.PropertyTypeCollection.Add(
-                new PropertyType("test", DataTypeDatabaseType.Ntext, "title2") { Name = "Title2", Description = "", HelpText = "", Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
+                new PropertyType("test", DataTypeDatabaseType.Ntext, "title2") { Name = "Title2", Description = "", Mandatory = false, SortOrder = 1, DataTypeDefinitionId = -88 });
 
             contentType.AllowedTemplates = new[] { new Template("-1,2", "Name", "name") { Id = 200 }, new Template("-1,3", "Name2", "name2") { Id = 201 } };
             contentType.AllowedContentTypes = new[] { new ContentTypeSort(new Lazy<int>(() => 888), 8, "sub"), new ContentTypeSort(new Lazy<int>(() => 889), 9, "sub2") };
@@ -205,7 +205,7 @@ namespace Umbraco.Tests.Models
             }
             Assert.AreNotSame(clone.PropertyTypes, contentType.PropertyTypes);
             Assert.AreEqual(clone.PropertyTypes.Count(), contentType.PropertyTypes.Count());
-            Assert.AreEqual(0, ((ContentTypeBase)clone).NonGroupedPropertyTypes.Count());
+            Assert.AreEqual(0, clone.NoGroupPropertyTypes.Count());
             for (var index = 0; index < contentType.PropertyTypes.Count(); index++)
             {
                 Assert.AreNotSame(clone.PropertyTypes.ElementAt(index), contentType.PropertyTypes.ElementAt(index));

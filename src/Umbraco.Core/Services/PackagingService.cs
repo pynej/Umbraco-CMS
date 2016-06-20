@@ -1,8 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Web;
+using System.Web.UI.WebControls;
 using System.Xml.Linq;
 using System.Xml.XPath;
 using Newtonsoft.Json;
@@ -11,12 +13,14 @@ using Umbraco.Core.Events;
 using Umbraco.Core.IO;
 using Umbraco.Core.Logging;
 using Umbraco.Core.Models;
+using Umbraco.Core.Models.EntityBase;
 using Umbraco.Core.Models.Rdbms;
 using Umbraco.Core.Packaging;
 using Umbraco.Core.Packaging.Models;
 using Umbraco.Core.Persistence;
 using Umbraco.Core.Persistence.Querying;
 using Umbraco.Core.Persistence.UnitOfWork;
+using Content = Umbraco.Core.Models.Content;
 
 namespace Umbraco.Core.Services
 {
@@ -26,6 +30,7 @@ namespace Umbraco.Core.Services
     /// </summary>
     public class PackagingService : IPackagingService
     {
+        private readonly ILogger _logger;
         private readonly IContentService _contentService;
         private readonly IContentTypeService _contentTypeService;
         private readonly IMediaService _mediaService;
@@ -33,6 +38,7 @@ namespace Umbraco.Core.Services
         private readonly IDataTypeService _dataTypeService;
         private readonly IFileService _fileService;
         private readonly ILocalizationService _localizationService;
+        private readonly IEntityService _entityService;
         private readonly RepositoryFactory _repositoryFactory;
         private readonly IDatabaseUnitOfWorkProvider _uowProvider;
         private Dictionary<string, IContentType> _importedContentTypes;
@@ -40,17 +46,21 @@ namespace Umbraco.Core.Services
         private readonly IUserService _userService;
 
 
-        public PackagingService(IContentService contentService,
+        public PackagingService(
+            ILogger logger,
+            IContentService contentService,
             IContentTypeService contentTypeService,
             IMediaService mediaService,
             IMacroService macroService,
             IDataTypeService dataTypeService,
             IFileService fileService,
             ILocalizationService localizationService,
+            IEntityService entityService,
             IUserService userService,
             RepositoryFactory repositoryFactory,
             IDatabaseUnitOfWorkProvider uowProvider)
         {
+            _logger = logger;
             _contentService = contentService;
             _contentTypeService = contentTypeService;
             _mediaService = mediaService;
@@ -58,6 +68,7 @@ namespace Umbraco.Core.Services
             _dataTypeService = dataTypeService;
             _fileService = fileService;
             _localizationService = localizationService;
+            _entityService = entityService;
             _repositoryFactory = repositoryFactory;
             _uowProvider = uowProvider;
             _userService = userService;
@@ -289,7 +300,7 @@ namespace Umbraco.Core.Services
             }
 
             var exporter = new EntityXmlSerializer();
-            var xml = exporter.Serialize(_dataTypeService, contentType);
+            var xml = exporter.Serialize(_dataTypeService, _contentTypeService, contentType);
 
             if (raiseEvents)
                 ExportedContentType.RaiseEvent(new ExportEventArgs<IContentType>(contentType, xml, false), this);
@@ -340,6 +351,9 @@ namespace Umbraco.Core.Services
             //Otherwise something like uSync won't work.
             var fields = new List<TopologicalSorter.DependencyField<XElement>>();
             var isSingleDocTypeImport = unsortedDocumentTypes.Count == 1;
+
+            var importedFolders = CreateContentTypeFolderStructure(unsortedDocumentTypes);
+
             if (isSingleDocTypeImport == false)
             {
                 //NOTE Here we sort the doctype XElements based on dependencies
@@ -348,13 +362,12 @@ namespace Umbraco.Core.Services
                 {
                     var elementCopy = documentType;
                     var infoElement = elementCopy.Element("Info");
-                    var dependencies = new List<string>();
+                    var dependencies = new HashSet<string>();
 
                     //Add the Master as a dependency
-                    if (elementCopy.Element("Master") != null &&
-                        string.IsNullOrEmpty(elementCopy.Element("Master").Value) == false)
+                    if (string.IsNullOrEmpty((string)infoElement.Element("Master")) == false)
                     {
-                        dependencies.Add(elementCopy.Element("Master").Value);
+                        dependencies.Add(infoElement.Element("Master").Value);
                     }
 
                     //Add compositions as dependencies
@@ -400,6 +413,15 @@ namespace Umbraco.Core.Services
                 }
             }
 
+            foreach (var contentType in _importedContentTypes)
+            {
+                var ct = contentType.Value;
+                if (importedFolders.ContainsKey(ct.Alias))
+                {
+                    ct.ParentId = importedFolders[ct.Alias];
+                }
+            }
+
             //Save the newly created/updated IContentType objects
             var list = _importedContentTypes.Select(x => x.Value).ToList();
             _contentTypeService.Save(list, userId);
@@ -429,6 +451,69 @@ namespace Umbraco.Core.Services
                 ImportedContentType.RaiseEvent(new ImportEventArgs<IContentType>(list, element, false), this);
 
             return list;
+        }
+
+        private Dictionary<string, int> CreateContentTypeFolderStructure(IEnumerable<XElement> unsortedDocumentTypes)
+        {
+            var importedFolders = new Dictionary<string, int>();
+            foreach (var documentType in unsortedDocumentTypes)
+            {
+                var foldersAttribute = documentType.Attribute("Folders");
+                var infoElement = documentType.Element("Info");
+                if (foldersAttribute != null && infoElement != null 
+                    //don't import any folder if this is a child doc type - the parent doc type will need to
+                    //exist which contains it's folders
+                    && ((string)infoElement.Element("Master")).IsNullOrWhiteSpace())
+                {
+                    var alias = documentType.Element("Info").Element("Alias").Value;
+                    var folders = foldersAttribute.Value.Split('/');
+                    var rootFolder = HttpUtility.UrlDecode(folders[0]);
+                    //level 1 = root level folders, there can only be one with the same name
+                    var current = _contentTypeService.GetContentTypeContainers(rootFolder, 1).FirstOrDefault();
+
+                    if (current == null)
+                    {
+                        var tryCreateFolder = _contentTypeService.CreateContentTypeContainer(-1, rootFolder);
+                        if (tryCreateFolder == false)
+                        {
+                            _logger.Error<PackagingService>("Could not create folder: " + rootFolder, tryCreateFolder.Exception);
+                            throw tryCreateFolder.Exception;
+                        }
+                        var rootFolderId = tryCreateFolder.Result.Entity.Id;
+                        current = _contentTypeService.GetContentTypeContainer(rootFolderId);
+                    }
+
+                    importedFolders.Add(alias, current.Id);
+
+                    for (var i = 1; i < folders.Length; i++)
+                    {
+                        var folderName = HttpUtility.UrlDecode(folders[i]);
+                        current = CreateContentTypeChildFolder(folderName, current);
+                        importedFolders[alias] = current.Id;
+                    }
+                }
+            }
+
+            return importedFolders;
+        }
+
+        private EntityContainer CreateContentTypeChildFolder(string folderName, IUmbracoEntity current)
+        {
+            var children = _entityService.GetChildren(current.Id).ToArray();
+            var found = children.Any(x => x.Name.InvariantEquals(folderName));
+            if (found)
+            {
+                var containerId = children.Single(x => x.Name.InvariantEquals(folderName)).Id;
+                return _contentTypeService.GetContentTypeContainer(containerId);
+            }
+
+            var tryCreateFolder = _contentTypeService.CreateContentTypeContainer(current.Id, folderName);
+            if (tryCreateFolder == false)
+            {
+                _logger.Error<PackagingService>("Could not create folder: " + folderName, tryCreateFolder.Exception);
+                throw tryCreateFolder.Exception;
+            }
+            return _contentTypeService.GetContentTypeContainer(tryCreateFolder.Result.Entity.Id);
         }
 
         private IContentType CreateContentTypeFromXml(XElement documentType)
@@ -531,7 +616,7 @@ namespace Umbraco.Core.Services
                     }
                     else
                     {
-                        LogHelper.Warn<PackagingService>(
+                        _logger.Warn<PackagingService>(
                             string.Format(
                                 "Packager: Error handling allowed templates. Template with alias '{0}' could not be found.",
                                 alias));
@@ -541,7 +626,7 @@ namespace Umbraco.Core.Services
                 contentType.AllowedTemplates = allowedTemplates;
             }
 
-            if (string.IsNullOrEmpty(defaultTemplateElement.Value) == false)
+            if (string.IsNullOrEmpty((string)defaultTemplateElement) == false)
             {
                 var defaultTemplate = _fileService.GetTemplate(defaultTemplateElement.Value.ToSafeAlias());
                 if (defaultTemplate != null)
@@ -550,7 +635,7 @@ namespace Umbraco.Core.Services
                 }
                 else
                 {
-                    LogHelper.Warn<PackagingService>(
+                    _logger.Warn<PackagingService>(
                         string.Format(
                             "Packager: Error handling default template. Default template with alias '{0}' could not be found.",
                             defaultTemplateElement.Value));
@@ -612,7 +697,7 @@ namespace Umbraco.Core.Services
                                                   : _dataTypeService.GetDataTypeDefinitionByPropertyEditorAlias(propertyEditorAlias);
                     if (dataTypeDefinitions != null && dataTypeDefinitions.Any())
                     {
-                        dataTypeDefinition = dataTypeDefinitions.First();
+                        dataTypeDefinition = dataTypeDefinitions.FirstOrDefault();
                     }
                 }
                 else if (legacyPropertyEditorId != Guid.Empty && dataTypeDefinition.ControlId != legacyPropertyEditorId)
@@ -620,7 +705,7 @@ namespace Umbraco.Core.Services
                     var dataTypeDefinitions = _dataTypeService.GetDataTypeDefinitionByControlId(legacyPropertyEditorId);
                     if (dataTypeDefinitions != null && dataTypeDefinitions.Any())
                     {
-                        dataTypeDefinition = dataTypeDefinitions.First();
+                        dataTypeDefinition = dataTypeDefinitions.FirstOrDefault();
                     }
                 }
                 else if (dataTypeDefinition.PropertyEditorAlias != propertyEditorAlias)
@@ -628,7 +713,7 @@ namespace Umbraco.Core.Services
                     var dataTypeDefinitions = _dataTypeService.GetDataTypeDefinitionByPropertyEditorAlias(propertyEditorAlias);
                     if (dataTypeDefinitions != null && dataTypeDefinitions.Any())
                     {
-                        dataTypeDefinition = dataTypeDefinitions.First();
+                        dataTypeDefinition = dataTypeDefinitions.FirstOrDefault();
                     }
                 }
 
@@ -636,7 +721,7 @@ namespace Umbraco.Core.Services
                 // This means that the property will not be created.
                 if (dataTypeDefinition == null)
                 {
-                    LogHelper.Warn<PackagingService>(
+                    _logger.Warn<PackagingService>(
                         string.Format("Packager: Error handling creation of PropertyType '{0}'. Could not find DataTypeDefintion with unique id '{1}' nor one referencing the DataType with a property editor alias (or legacy control id) '{2}'. Did the package creator forget to package up custom datatypes? This property will be converted to a label/readonly editor if one exists.",
                                       property.Element("Name").Value,
                                       dataTypeDefinitionId,
@@ -648,21 +733,20 @@ namespace Umbraco.Core.Services
                     if (dataTypeDefinition == null) continue;
                 }
 
+                var sortOrder = 0;
+                var sortOrderElement = property.Element("SortOrder");
+                if (sortOrderElement != null)
+                    int.TryParse(sortOrderElement.Value, out sortOrder);
                 var propertyType = new PropertyType(dataTypeDefinition, property.Element("Alias").Value)
-                                       {
-                                           Name = property.Element("Name").Value,
-                                           Description = property.Element("Description").Value,
-                                           Mandatory = property.Element("Mandatory").Value.ToLowerInvariant().Equals("true"),
-                                           ValidationRegExp = property.Element("Validation").Value
-                                       };
-
-                var helpTextElement = property.Element("HelpText");
-                if (helpTextElement != null)
                 {
-                    propertyType.HelpText = helpTextElement.Value;
-                }
+                    Name = property.Element("Name").Value,
+                    Description = (string)property.Element("Description"),
+                    Mandatory = property.Element("Mandatory") != null ? property.Element("Mandatory").Value.ToLowerInvariant().Equals("true") : false,
+                    ValidationRegExp = (string)property.Element("Validation"),
+                    SortOrder = sortOrder
+                };
 
-                var tab = property.Element("Tab").Value;
+                var tab = (string)property.Element("Tab");
                 if (string.IsNullOrEmpty(tab))
                 {
                     contentType.AddPropertyType(propertyType);
@@ -691,7 +775,7 @@ namespace Umbraco.Core.Services
                 }
                 else
                 {
-                    LogHelper.Warn<PackagingService>(
+                    _logger.Warn<PackagingService>(
                     string.Format(
                         "Packager: Error handling DocumentType structure. DocumentType with alias '{0}' could not be found and was not added to the structure for '{1}'.",
                         alias, contentType.Alias));
@@ -712,14 +796,14 @@ namespace Umbraco.Core.Services
             using (var repository = _repositoryFactory.CreateContentTypeRepository(_uowProvider.GetUnitOfWork()))
             {
                 var query = Query<IContentType>.Builder.Where(x => x.Alias == contentTypeAlias);
-                var types = repository.GetByQuery(query);
+                var types = repository.GetByQuery(query).ToArray();
 
-                if (!types.Any())
+                if (types.Any() == false)
                     throw new Exception(
                         string.Format("No ContentType matching the passed in Alias: '{0}' was found",
                                       contentTypeAlias));
 
-                var contentType = types.First();
+                var contentType = types.FirstOrDefault();
 
                 if (contentType == null)
                     throw new Exception(string.Format("ContentType matching the passed in Alias: '{0}' was null",
@@ -798,15 +882,21 @@ namespace Umbraco.Core.Services
                                        ? (from doc in element.Elements("DataType") select doc).ToList()
                                        : new List<XElement> { element };
 
+            var importedFolders = CreateDataTypeFolderStructure(dataTypeElements);
+
             foreach (var dataTypeElement in dataTypeElements)
             {
                 var dataTypeDefinitionName = dataTypeElement.Attribute("Name").Value;
 
-                var legacyPropertyEditorId = Guid.Empty;
+                Guid legacyPropertyEditorId;
                 Guid.TryParse(dataTypeElement.Attribute("Id").Value, out legacyPropertyEditorId);
 
                 var dataTypeDefinitionId = new Guid(dataTypeElement.Attribute("Definition").Value);
                 var databaseTypeAttribute = dataTypeElement.Attribute("DatabaseType");
+
+                var parentId = -1;
+                if (importedFolders.ContainsKey(dataTypeDefinitionName))
+                    parentId = importedFolders[dataTypeDefinitionName];
 
                 var definition = _dataTypeService.GetDataTypeDefinitionById(dataTypeDefinitionId);
                 //If the datatypedefinition doesn't already exist we create a new new according to the one in the package xml
@@ -820,25 +910,32 @@ namespace Umbraco.Core.Services
                     if (legacyPropertyEditorId != Guid.Empty)
                     {
                         var dataTypeDefinition = new DataTypeDefinition(-1, legacyPropertyEditorId)
-                            {
-                                Key = dataTypeDefinitionId,
-                                Name = dataTypeDefinitionName,
-                                DatabaseType = databaseType
-                            };
+                        {
+                            Key = dataTypeDefinitionId,
+                            Name = dataTypeDefinitionName,
+                            DatabaseType = databaseType,
+                            ParentId = parentId
+                        };
                         dataTypes.Add(dataTypeDefinitionName, dataTypeDefinition);
                     }
                     else
                     {
                         //the Id field is actually the string property editor Alias
-                        var dataTypeDefinition = new DataTypeDefinition(-1, dataTypeElement.Attribute("Id").Value.Trim())
+                        var dataTypeDefinition = new DataTypeDefinition(dataTypeElement.Attribute("Id").Value.Trim())
                         {
                             Key = dataTypeDefinitionId,
                             Name = dataTypeDefinitionName,
-                            DatabaseType = databaseType
+                            DatabaseType = databaseType,
+                            ParentId = parentId
                         };
                         dataTypes.Add(dataTypeDefinitionName, dataTypeDefinition);
                     }
 
+                }
+                else
+                {
+                    definition.ParentId = parentId;
+                    _dataTypeService.Save(definition, userId);
                 }
             }
 
@@ -862,6 +959,64 @@ namespace Umbraco.Core.Services
             return list;
         }
 
+        private Dictionary<string, int> CreateDataTypeFolderStructure(IEnumerable<XElement> datatypeElements)
+        {
+            var importedFolders = new Dictionary<string, int>();
+            foreach (var datatypeElement in datatypeElements)
+            {
+                var foldersAttribute = datatypeElement.Attribute("Folders");
+                if (foldersAttribute != null)
+                {
+                    var name = datatypeElement.Attribute("Name").Value;
+                    var folders = foldersAttribute.Value.Split('/');
+                    var rootFolder = HttpUtility.UrlDecode(folders[0]);
+                    //there will only be a single result by name for level 1 (root) containers
+                    var current = _dataTypeService.GetContainers(rootFolder, 1).FirstOrDefault();
+
+                    if (current == null)
+                    {
+                        var tryCreateFolder = _dataTypeService.CreateContainer(-1, rootFolder);
+                        if (tryCreateFolder == false)
+                        {
+                            _logger.Error<PackagingService>("Could not create folder: " + rootFolder, tryCreateFolder.Exception);
+                            throw tryCreateFolder.Exception;
+                        }                        
+                        current = _dataTypeService.GetContainer(tryCreateFolder.Result.Entity.Id);
+                    }
+
+                    importedFolders.Add(name, current.Id);
+
+                    for (var i = 1; i < folders.Length; i++)
+                    {
+                        var folderName = HttpUtility.UrlDecode(folders[i]);
+                        current = CreateDataTypeChildFolder(folderName, current);
+                        importedFolders[name] = current.Id;
+                    }
+                }
+            }
+
+            return importedFolders;
+        }
+
+        private EntityContainer CreateDataTypeChildFolder(string folderName, IUmbracoEntity current)
+        {
+            var children = _entityService.GetChildren(current.Id).ToArray();
+            var found = children.Any(x => x.Name.InvariantEquals(folderName));
+            if (found)
+            {
+                var containerId = children.Single(x => x.Name.InvariantEquals(folderName)).Id;
+                return _dataTypeService.GetContainer(containerId);
+            }
+
+            var tryCreateFolder = _dataTypeService.CreateContainer(current.Id, folderName);
+            if (tryCreateFolder == false)
+            {
+                _logger.Error<PackagingService>("Could not create folder: " + folderName, tryCreateFolder.Exception);
+                throw tryCreateFolder.Exception;
+            }
+            return _dataTypeService.GetContainer(tryCreateFolder.Result.Entity.Id);
+        }
+
         private void SavePrevaluesFromXml(List<IDataTypeDefinition> dataTypes, IEnumerable<XElement> dataTypeElements)
         {
             foreach (var dataTypeElement in dataTypeElements)
@@ -870,23 +1025,30 @@ namespace Umbraco.Core.Services
                 if (prevaluesElement == null) continue;
 
                 var dataTypeDefinitionName = dataTypeElement.Attribute("Name").Value;
-                var dataTypeDefinition = dataTypes.First(x => x.Name == dataTypeDefinitionName);
+                var dataTypeDefinition = dataTypes.FirstOrDefault(x => x.Name == dataTypeDefinitionName);
 
-                var valuesWithoutKeys = prevaluesElement.Elements("PreValue")
-                                                        .Where(x => ((string)x.Attribute("Alias")).IsNullOrWhiteSpace())
-                                                        .Select(x => x.Attribute("Value").Value);
+                if (dataTypeDefinition != null)
+                {
+                    var valuesWithoutKeys = prevaluesElement.Elements("PreValue")
+                        .Where(x => ((string) x.Attribute("Alias")).IsNullOrWhiteSpace())
+                        .Select(x => x.Attribute("Value").Value);
 
-                var valuesWithKeys = prevaluesElement.Elements("PreValue")
-                    .Where(x => ((string)x.Attribute("Alias")).IsNullOrWhiteSpace() == false)
-                    .ToDictionary(
-                        key => (string)key.Attribute("Alias"),
-                        val => new PreValue((string)val.Attribute("Value")));
+                    var valuesWithKeys = prevaluesElement.Elements("PreValue")
+                        .Where(x => ((string) x.Attribute("Alias")).IsNullOrWhiteSpace() == false)
+                        .ToDictionary(
+                            key => (string) key.Attribute("Alias"),
+                            val => new PreValue((string) val.Attribute("Value")));
 
-                //save the values with keys
-                _dataTypeService.SavePreValues(dataTypeDefinition, valuesWithKeys);
+                    //save the values with keys
+                    _dataTypeService.SavePreValues(dataTypeDefinition, valuesWithKeys);
 
-                //save the values without keys (this is legacy)
-                _dataTypeService.SavePreValues(dataTypeDefinition.Id, valuesWithoutKeys);
+                    //save the values without keys (this is legacy)
+                    _dataTypeService.SavePreValues(dataTypeDefinition.Id, valuesWithoutKeys);
+                }
+                else
+                {
+                    _logger.Warn<PackagingService>("No data type found with name " + dataTypeDefinitionName + " data type pre-values will not be saved");
+                }
             }
         }
 
@@ -1101,9 +1263,9 @@ namespace Umbraco.Core.Services
                 if (existingLanguage == null)
                 {
                     var langauge = new Language(isoCode)
-                                   {
-                                       CultureName = languageElement.Attribute("FriendlyName").Value
-                                   };
+                    {
+                        CultureName = languageElement.Attribute("FriendlyName").Value
+                    };
                     _localizationService.Save(langauge);
                     list.Add(langauge);
                 }
@@ -1173,31 +1335,31 @@ namespace Umbraco.Core.Services
             //Following xml elements are treated as nullable properties
             var useInEditorElement = macroElement.Element("useInEditor");
             var useInEditor = false;
-            if (useInEditorElement != null && string.IsNullOrEmpty(useInEditorElement.Value) == false)
+            if (useInEditorElement != null && string.IsNullOrEmpty((string)useInEditorElement) == false)
             {
                 useInEditor = bool.Parse(useInEditorElement.Value);
             }
             var cacheDurationElement = macroElement.Element("refreshRate");
             var cacheDuration = 0;
-            if (cacheDurationElement != null && string.IsNullOrEmpty(cacheDurationElement.Value) == false)
+            if (cacheDurationElement != null && string.IsNullOrEmpty((string)cacheDurationElement) == false)
             {
                 cacheDuration = int.Parse(cacheDurationElement.Value);
             }
             var cacheByMemberElement = macroElement.Element("cacheByMember");
             var cacheByMember = false;
-            if (cacheByMemberElement != null && string.IsNullOrEmpty(cacheByMemberElement.Value) == false)
+            if (cacheByMemberElement != null && string.IsNullOrEmpty((string)cacheByMemberElement) == false)
             {
                 cacheByMember = bool.Parse(cacheByMemberElement.Value);
             }
             var cacheByPageElement = macroElement.Element("cacheByPage");
             var cacheByPage = false;
-            if (cacheByPageElement != null && string.IsNullOrEmpty(cacheByPageElement.Value) == false)
+            if (cacheByPageElement != null && string.IsNullOrEmpty((string)cacheByPageElement) == false)
             {
                 cacheByPage = bool.Parse(cacheByPageElement.Value);
             }
             var dontRenderElement = macroElement.Element("dontRender");
             var dontRender = true;
-            if (dontRenderElement != null && string.IsNullOrEmpty(dontRenderElement.Value) == false)
+            if (dontRenderElement != null && string.IsNullOrEmpty((string)dontRenderElement) == false)
             {
                 dontRender = bool.Parse(dontRenderElement.Value);
             }
@@ -1221,7 +1383,7 @@ namespace Umbraco.Core.Services
                         sortOrder = int.Parse(sortOrderAttribute.Value);
                     }
 
-                    if (macro.Properties.Any(x => x.Alias == propertyAlias)) continue;
+                    if (macro.Properties.Any(x => string.Equals(x.Alias, propertyAlias, StringComparison.OrdinalIgnoreCase))) continue;
                     macro.Properties.Add(new MacroProperty(propertyAlias, propertyName, sortOrder, editorAlias));
                     sortOrder++;
                 }
@@ -1370,26 +1532,23 @@ namespace Umbraco.Core.Services
                 var dependencies = new List<string>();
                 var elementCopy = tempElement;
                 //Ensure that the Master of the current template is part of the import, otherwise we ignore this dependency as part of the dependency sorting.
-                if (elementCopy.Element("Master") != null &&
-                    string.IsNullOrEmpty(elementCopy.Element("Master").Value) == false &&
-                    templateElements.Any(x => x.Element("Alias").Value == elementCopy.Element("Master").Value))
+                if (string.IsNullOrEmpty((string)elementCopy.Element("Master")) == false &&
+                    templateElements.Any(x => (string)x.Element("Alias") == (string)elementCopy.Element("Master")))
                 {
-                    dependencies.Add(elementCopy.Element("Master").Value);
+                    dependencies.Add((string)elementCopy.Element("Master"));
                 }
-                else if (elementCopy.Element("Master") != null &&
-                         string.IsNullOrEmpty(elementCopy.Element("Master").Value) == false &&
-                         templateElements.Any(x => x.Element("Alias").Value == elementCopy.Element("Master").Value) ==
-                         false)
+                else if (string.IsNullOrEmpty((string)elementCopy.Element("Master")) == false &&
+                    templateElements.Any(x => (string)x.Element("Alias") == (string)elementCopy.Element("Master")) == false)
                 {
-                    LogHelper.Info<PackagingService>(string.Format("Template '{0}' has an invalid Master '{1}', so the reference has been ignored.", elementCopy.Element("Alias").Value, elementCopy.Element("Master").Value));
+                    _logger.Info<PackagingService>(string.Format("Template '{0}' has an invalid Master '{1}', so the reference has been ignored.", (string)elementCopy.Element("Alias"), (string)elementCopy.Element("Master")));
                 }
 
                 var field = new TopologicalSorter.DependencyField<XElement>
-                                {
-                                    Alias = elementCopy.Element("Alias").Value,
-                                    Item = new Lazy<XElement>(() => elementCopy),
-                                    DependsOn = dependencies.ToArray()
-                                };
+                {
+                    Alias = (string)elementCopy.Element("Alias"),
+                    Item = new Lazy<XElement>(() => elementCopy),
+                    DependsOn = dependencies.ToArray()
+                };
 
                 fields.Add(field);
             }
@@ -1408,7 +1567,7 @@ namespace Umbraco.Core.Services
                 var existingTemplate = _fileService.GetTemplate(alias) as Template;
                 var template = existingTemplate ?? new Template(path, templateName, alias);
                 template.Content = design;
-                if (masterElement != null && string.IsNullOrEmpty(masterElement.Value) == false)
+                if (masterElement != null && string.IsNullOrEmpty((string)masterElement) == false)
                 {
                     template.MasterTemplateAlias = masterElement.Value;
                     var masterTemplate = templates.FirstOrDefault(x => x.Alias == masterElement.Value);

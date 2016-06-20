@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using Umbraco.Core.Models;
 using Umbraco.Core.Models.Membership;
 using Umbraco.Core.Persistence.DatabaseModelDefinitions;
@@ -21,6 +22,11 @@ namespace Umbraco.Core.Services
         /// </param>
         void RebuildXmlStructures(params int[] contentTypeIds);
 
+        [Obsolete("Use the overload with 'long' parameter types instead")]
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        IEnumerable<IMember> GetAll(int pageIndex, int pageSize, out int totalRecords,
+            string orderBy, Direction orderDirection, string memberTypeAlias = null, string filter = "");
+
         /// <summary>
         /// Gets a list of paged <see cref="IMember"/> objects
         /// </summary>
@@ -28,14 +34,30 @@ namespace Umbraco.Core.Services
         /// <param name="pageIndex">Current page index</param>
         /// <param name="pageSize">Size of the page</param>
         /// <param name="totalRecords">Total number of records found (out)</param>
-        /// <param name="orderBy"></param>
-        /// <param name="orderDirection"></param>
+        /// <param name="orderBy">Field to order by</param>
+        /// <param name="orderDirection">Direction to order by</param>
         /// <param name="memberTypeAlias"></param>
-        /// <param name="filter"></param>
+        /// <param name="filter">Search text filter</param>
         /// <returns><see cref="IEnumerable{T}"/></returns>
-        IEnumerable<IMember> GetAll(int pageIndex, int pageSize, out int totalRecords,
+        IEnumerable<IMember> GetAll(long pageIndex, int pageSize, out long totalRecords,
             string orderBy, Direction orderDirection, string memberTypeAlias = null, string filter = "");
-        
+
+        /// <summary>
+        /// Gets a list of paged <see cref="IMember"/> objects
+        /// </summary>
+        /// <remarks>An <see cref="IMember"/> can be of type <see cref="IMember"/> </remarks>
+        /// <param name="pageIndex">Current page index</param>
+        /// <param name="pageSize">Size of the page</param>
+        /// <param name="totalRecords">Total number of records found (out)</param>
+        /// <param name="orderBy">Field to order by</param>
+        /// <param name="orderDirection">Direction to order by</param>
+        /// <param name="orderBySystemField">Flag to indicate when ordering by system field</param>
+        /// <param name="memberTypeAlias"></param>
+        /// <param name="filter">Search text filter</param>
+        /// <returns><see cref="IEnumerable{T}"/></returns>
+        IEnumerable<IMember> GetAll(long pageIndex, int pageSize, out long totalRecords,
+            string orderBy, Direction orderDirection, bool orderBySystemField, string memberTypeAlias, string filter);
+
         /// <summary>
         /// Creates an <see cref="IMember"/> object without persisting it
         /// </summary>
@@ -85,7 +107,7 @@ namespace Umbraco.Core.Services
         /// <param name="memberType">MemberType the Member should be based on</param>
         /// <returns><see cref="IMember"/></returns>
         IMember CreateMemberWithIdentity(string username, string email, string name, IMemberType memberType);
-        
+
         /// <summary>
         /// This is simply a helper method which essentially just wraps the MembershipProvider's ChangePassword method
         /// </summary>
@@ -109,7 +131,7 @@ namespace Umbraco.Core.Services
         /// <param name="id">Id of the Member</param>
         /// <returns><c>True</c> if the Member exists otherwise <c>False</c></returns>
         bool Exists(int id);
-        
+
         /// <summary>
         /// Gets a Member by the unique key
         /// </summary>
@@ -154,12 +176,16 @@ namespace Umbraco.Core.Services
         /// <param name="ids">Optional list of Member Ids</param>
         /// <returns><see cref="IEnumerable{IMember}"/></returns>
         IEnumerable<IMember> GetAllMembers(params int[] ids);
-        
+
         /// <summary>
         /// Delete Members of the specified MemberType id
         /// </summary>
         /// <param name="memberTypeId">Id of the MemberType</param>
         void DeleteMembersOfType(int memberTypeId);
+
+        [Obsolete("Use the overload with 'long' parameter types instead")]
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        IEnumerable<IMember> FindMembersByDisplayName(string displayNameToMatch, int pageIndex, int pageSize, out int totalRecords, StringPropertyMatchType matchType = StringPropertyMatchType.StartsWith);
 
         /// <summary>
         /// Finds Members based on their display name
@@ -170,7 +196,7 @@ namespace Umbraco.Core.Services
         /// <param name="totalRecords">Total number of records found (out)</param>
         /// <param name="matchType">The type of match to make as <see cref="StringPropertyMatchType"/>. Default is <see cref="StringPropertyMatchType.StartsWith"/></param>
         /// <returns><see cref="IEnumerable{IMember}"/></returns>
-        IEnumerable<IMember> FindMembersByDisplayName(string displayNameToMatch, int pageIndex, int pageSize, out int totalRecords, StringPropertyMatchType matchType = StringPropertyMatchType.StartsWith);
+        IEnumerable<IMember> FindMembersByDisplayName(string displayNameToMatch, long pageIndex, int pageSize, out long totalRecords, StringPropertyMatchType matchType = StringPropertyMatchType.StartsWith);
 
         /// <summary>
         /// Gets a list of Members based on a property search

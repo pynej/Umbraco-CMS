@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using Umbraco.Core.Persistence.Mappers;
 
@@ -20,12 +21,8 @@ namespace Umbraco.Core.Models
         /// </summary>
         bool Published { get; }
 
-        /// <summary>
-        /// Language of the data contained within this Content object.
-        /// </summary>
-        /// <remarks>
-        /// Left internal until multilingual support is implemented.
-        /// </remarks>
+        [Obsolete("This will be removed in future versions")]
+        [EditorBrowsable(EditorBrowsableState.Never)]
         string Language { get; set; }
 
         /// <summary>
@@ -78,5 +75,15 @@ namespace Umbraco.Core.Models
         /// </summary>
         /// <returns></returns>
         IContent DeepCloneWithResetIdentities();
+
+        /// <summary>
+        /// Gets a value indicating whether the content has a published version.
+        /// </summary>
+        bool HasPublishedVersion { get; }
+
+        /// <summary>
+        /// Gets the unique identifier of the published version, if any.
+        /// </summary>
+        Guid PublishedVersionGuid { get; }
     }
 }

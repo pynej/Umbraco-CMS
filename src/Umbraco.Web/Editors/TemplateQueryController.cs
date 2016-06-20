@@ -18,7 +18,6 @@ namespace Umbraco.Web.Editors
     /// The API controller used for building content queries within the template
     /// </summary>
     [PluginController("UmbracoApi")]
-    [DisableBrowserCache]
     [JsonCamelCaseFormatter]
     public class TemplateQueryController : UmbracoAuthorizedJsonController
     {
@@ -83,29 +82,31 @@ namespace Umbraco.Web.Editors
             {
                 var targetNode = umbraco.TypedContent(model.Source.Id);
 
-                var aliases = this.GetChildContentTypeAliases(targetNode, currentPage).Reverse();
-                
-                foreach (var contentTypeAlias in aliases)
+                if (targetNode != null)
                 {
-                    timer.Start();
+                    var aliases = this.GetChildContentTypeAliases(targetNode, currentPage).Reverse();
 
-                    pointerNode = pointerNode.FirstChild(x => x.DocumentTypeAlias == contentTypeAlias);
+                    foreach (var contentTypeAlias in aliases)
+                    {
+                        timer.Start();
 
-                    if (pointerNode == null) break;
+                        pointerNode = pointerNode.FirstChild(x => x.DocumentTypeAlias == contentTypeAlias);
 
-                    timer.Stop();
-                    
-                    sb.AppendFormat(".FirstChild(\"{0}\")", contentTypeAlias);
+                        if (pointerNode == null) break;
+
+                        timer.Stop();
+
+                        sb.AppendFormat(".FirstChild(\"{0}\")", contentTypeAlias);
+                    }
+
+                    if (pointerNode == null || pointerNode.Id != model.Source.Id)
+                    {
+                        // we did not find the path
+                        sb.Clear();
+                        sb.AppendFormat("Umbraco.Content({0})", model.Source.Id);
+                        pointerNode = targetNode;
+                    }
                 }
-
-                if (pointerNode == null || pointerNode.Id != model.Source.Id)
-                {
-                    // we did not find the path
-                    sb.Clear();
-                    sb.AppendFormat("Umbraco.Content({0})", model.Source.Id);
-                    pointerNode = targetNode;
-                }
-
             }
                 
             // TYPE to return if filtered by type            

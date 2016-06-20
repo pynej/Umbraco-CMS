@@ -2,7 +2,7 @@
 using Umbraco.Core;
 using Umbraco.Core.Cache;
 using Umbraco.Core.Models;
-using Umbraco.Core.Persistence.Caching;
+
 
 namespace Umbraco.Web.Cache
 {
@@ -28,17 +28,15 @@ namespace Umbraco.Web.Cache
 
         public override void Refresh(int id)
         {
-            RuntimeCacheProvider.Current.Clear(typeof(ILanguage));
-            ApplicationContext.Current.ApplicationCache.ClearCacheItem(CacheKeys.LanguageCacheKey);
+            ClearAllIsolatedCacheByEntityType<ILanguage>();
             base.Refresh(id);
         }
 
         public override void Remove(int id)
         {
-            RuntimeCacheProvider.Current.Clear(typeof(ILanguage));
-            ApplicationContext.Current.ApplicationCache.ClearCacheItem(CacheKeys.LanguageCacheKey);
-            //when a language is removed we must also clear the text cache!
-            global::umbraco.cms.businesslogic.language.Item.ClearCache();
+            ClearAllIsolatedCacheByEntityType<ILanguage>();
+            //if a language is removed, then all dictionary cache needs to be removed
+            ClearAllIsolatedCacheByEntityType<IDictionaryItem>();
             base.Remove(id);
         }
     }

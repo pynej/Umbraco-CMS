@@ -7,7 +7,7 @@ using Umbraco.Core.Persistence.Repositories;
 
 namespace Umbraco.Core.Persistence.Factories
 {
-    internal class MemberTypeReadOnlyFactory : IEntityFactory<IMemberType, MemberTypeReadOnlyDto>
+    internal class MemberTypeReadOnlyFactory 
     {
         public IMemberType BuildEntity(MemberTypeReadOnlyDto dto)
         {
@@ -51,33 +51,31 @@ namespace Umbraco.Core.Persistence.Factories
                 memberType.MemberTypePropertyTypes.Add(standardPropertyType.Key,
                     new MemberTypePropertyProfileAccess(false, false));
             }
-            memberType.PropertyTypes = propertyTypes;
+            memberType.NoGroupPropertyTypes = propertyTypes;
 
             return memberType;
         }
 
         private PropertyGroupCollection GetPropertyTypeGroupCollection(MemberTypeReadOnlyDto dto, MemberType memberType, Dictionary<string, PropertyType> standardProps)
         {
-            var propertyGroups = new PropertyGroupCollection();            
-            
+            // see PropertyGroupFactory, repeating code here...
+
+            var propertyGroups = new PropertyGroupCollection();
             foreach (var groupDto in dto.PropertyTypeGroups.Where(x => x.Id.HasValue))
             {
                 var group = new PropertyGroup();
-               
-                //Only assign an Id if the PropertyGroup belongs to this ContentType
+
+                // if the group is defined on the current member type,
+                // assign its identifier, else it will be zero
                 if (groupDto.ContentTypeNodeId == memberType.Id)
                 {
+                    // note: no idea why Id is nullable here, but better check
+                    if (groupDto.Id.HasValue == false)
+                        throw new Exception("oops: groupDto.Id has no value.");
                     group.Id = groupDto.Id.Value;
-
-                    if (groupDto.ParentGroupId.HasValue)
-                        group.ParentId = groupDto.ParentGroupId.Value;
-                }
-                else
-                {
-                    //If the PropertyGroup is inherited, we add a reference to the group as a Parent.
-                    group.ParentId = groupDto.Id;
                 }
 
+                group.Key = groupDto.UniqueId;
                 group.Name = groupDto.Text;
                 group.SortOrder = groupDto.SortOrder;
                 group.PropertyTypes = new PropertyTypeCollection();
@@ -112,13 +110,13 @@ namespace Umbraco.Core.Persistence.Factories
                         Description = typeDto.Description,
                         Id = typeDto.Id.Value,
                         Name = typeDto.Name,
-                        HelpText = typeDto.HelpText,
                         Mandatory = typeDto.Mandatory,
                         SortOrder = typeDto.SortOrder,
                         ValidationRegExp = typeDto.ValidationRegExp,
                         PropertyGroupId = new Lazy<int>(() => tempGroupDto.Id.Value),
                         CreateDate = memberType.CreateDate,
-                        UpdateDate = memberType.UpdateDate
+                        UpdateDate = memberType.UpdateDate,
+                        Key = typeDto.UniqueId
                     };
                     //on initial construction we don't want to have dirty properties tracked
                     // http://issues.umbraco.org/issue/U4-1946
@@ -163,15 +161,15 @@ namespace Umbraco.Core.Persistence.Factories
                 {
                     DataTypeDefinitionId = typeDto.DataTypeId,
                     Description = typeDto.Description,
-                    HelpText = typeDto.HelpText,
                     Id = typeDto.Id.Value,
                     Mandatory = typeDto.Mandatory,
                     Name = typeDto.Name,
                     SortOrder = typeDto.SortOrder,
                     ValidationRegExp = typeDto.ValidationRegExp,
-                    PropertyGroupId = new Lazy<int>(() => default(int)),
+                    PropertyGroupId = null,
                     CreateDate = dto.CreateDate,
-                    UpdateDate = dto.CreateDate
+                    UpdateDate = dto.CreateDate,
+                    Key = typeDto.UniqueId
                 };
                 
                 propertyTypes.Add(propertyType);

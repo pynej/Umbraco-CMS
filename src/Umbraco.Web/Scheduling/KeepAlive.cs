@@ -32,7 +32,7 @@ namespace Umbraco.Web.Scheduling
             // ensure we do not run if not main domain, but do NOT lock it
             if (_appContext.MainDom.IsMainDom == false)
             {
-                LogHelper.Debug<ScheduledPublishing>("Does not run if not MainDom.");
+                LogHelper.Debug<KeepAlive>("Does not run if not MainDom.");
                 return false; // do NOT repeat, going down
             }
 
@@ -52,12 +52,7 @@ namespace Umbraco.Web.Scheduling
                     var url = umbracoAppUrl + "/ping.aspx";
                     using (var wc = new HttpClient())
                     {
-                        var request = new HttpRequestMessage()
-                        {
-                            RequestUri = new Uri(url),
-                            Method = HttpMethod.Get
-                        };
-
+                        var request = new HttpRequestMessage(HttpMethod.Get, url);
                         var result = await wc.SendAsync(request, token);
                     }
                 }

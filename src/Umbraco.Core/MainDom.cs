@@ -16,6 +16,8 @@ namespace Umbraco.Core
     {
         #region Vars
 
+        private readonly ILogger _logger;
+
         // our own lock for local consistency
         private readonly object _locko = new object();
 
@@ -41,8 +43,10 @@ namespace Umbraco.Core
         #region Ctor
 
         // initializes a new instance of MainDom
-        public MainDom()
+        public MainDom(ILogger logger)
         {
+            _logger = logger;
+
             var appId = string.Empty;
             // HostingEnvironment.ApplicationID is null in unit tests, making ReplaceNonAlphanumericChars fail
             if (HostingEnvironment.ApplicationID != null)
@@ -85,7 +89,7 @@ namespace Umbraco.Core
 
             lock (_locko)
             {
-                LogHelper.Debug<MainDom>("Signaled" + (_signaled ? " (again)" : "") + " (" + source + ").");
+                _logger.Debug<MainDom>("Signaled" + (_signaled ? " (again)" : "") + " (" + source + ").");
                 if (_signaled) return;
                 if (_isMainDom == false) return; // probably not needed
                 _signaled = true;
@@ -93,7 +97,7 @@ namespace Umbraco.Core
 
             try
             {
-                LogHelper.Debug<MainDom>("Stopping...");
+                _logger.Debug<MainDom>("Stopping...");
                 foreach (var callback in _callbacks.Values)
                 {
                     try
@@ -102,19 +106,19 @@ namespace Umbraco.Core
                     }
                     catch (Exception e)
                     {
-                        LogHelper.Error<MainDom>("Error while running callback, remaining callbacks will not run.", e);
+                        _logger.Error<MainDom>("Error while running callback, remaining callbacks will not run.", e);
                         throw;
                     }
                     
                 }
-                LogHelper.Debug<MainDom>("Stopped.");
+                _logger.Debug<MainDom>("Stopped.");
             }
             finally
             {
                 // in any case...
                 _isMainDom = false;
                 _asyncLocker.Dispose();
-                LogHelper.Debug<MainDom>("Released MainDom.");
+                _logger.Debug<MainDom>("Released MainDom.");
             }
         }
 
@@ -127,11 +131,11 @@ namespace Umbraco.Core
                 // the handler is not installed so that would be the hosting environment
                 if (_signaled)
                 {
-                    LogHelper.Debug<MainDom>("Cannot acquire MainDom (signaled).");
+                    _logger.Debug<MainDom>("Cannot acquire MainDom (signaled).");
                     return false;
                 }
 
-                LogHelper.Debug<MainDom>("Acquiring MainDom...");
+                _logger.Debug<MainDom>("Acquiring MainDom...");
 
                 // signal other instances that we want the lock, then wait one the lock,
                 // which may timeout, and this is accepted - see comments below
@@ -158,7 +162,7 @@ namespace Umbraco.Core
 
                 HostingEnvironment.RegisterObject(this);
 
-                LogHelper.Debug<MainDom>("Acquired MainDom.");
+                _logger.Debug<MainDom>("Acquired MainDom.");
                 return true;
             }
         }

@@ -1,7 +1,11 @@
 using System;
+using System.Collections.Generic;
+using System.ComponentModel;
 using System.Globalization;
+using System.Web.Security;
 using Umbraco.Core;
 using Umbraco.Core.Configuration;
+using Umbraco.Core.Configuration.UmbracoSettings;
 using Umbraco.Core.Models;
 
 using umbraco;
@@ -17,6 +21,15 @@ namespace Umbraco.Web.Routing
 	public class PublishedContentRequest
 	{
 	    private bool _readonly;
+	    private bool _readonlyUri;
+
+        /// <summary>
+        /// Triggers before the published content request is prepared.
+        /// </summary>
+        /// <remarks>When the event triggers, no preparation has been done. It is still possible to
+        /// modify the request's Uri property, for example to restore its original, public-facing value
+        /// that might have been modified by an in-between equipement such as a load-balancer.</remarks>
+	    public static event EventHandler<EventArgs> Preparing;
 
 		/// <summary>
 		/// Triggers once the published content request has been prepared, but before it is processed.
@@ -31,22 +44,38 @@ namespace Umbraco.Web.Routing
 		// the content request is just a data holder
 		private readonly PublishedContentRequestEngine _engine;
 
-		/// <summary>
-		/// Initializes a new instance of the <see cref="PublishedContentRequest"/> class with a specific Uri and routing context.
-		/// </summary>
-		/// <param name="uri">The request <c>Uri</c>.</param>
-		/// <param name="routingContext">A routing context.</param>
-		public PublishedContentRequest(Uri uri, RoutingContext routingContext)
-		{
-			if (uri == null) throw new ArgumentNullException("uri");
-			if (routingContext == null) throw new ArgumentNullException("routingContext");
+        // the cleaned up uri
+        // the cleaned up Uri has no virtual directory, no trailing slash, no .aspx extension, etc.
+        private Uri _uri;
 
-			Uri = uri;
-			RoutingContext = routingContext;
+	    /// <summary>
+	    /// Initializes a new instance of the <see cref="PublishedContentRequest"/> class with a specific Uri and routing context.
+	    /// </summary>
+	    /// <param name="uri">The request <c>Uri</c>.</param>
+	    /// <param name="routingContext">A routing context.</param>
+        /// <param name="getRolesForLogin">A callback method to return the roles for the provided login name when required</param>
+        /// <param name="routingConfig"></param>
+	    public PublishedContentRequest(Uri uri, RoutingContext routingContext, IWebRoutingSection routingConfig, Func<string, IEnumerable<string>> getRolesForLogin)
+	    {
+            if (uri == null) throw new ArgumentNullException("uri");
+            if (routingContext == null) throw new ArgumentNullException("routingContext");
 
-			_engine = new PublishedContentRequestEngine(this);
+            Uri = uri;
+            RoutingContext = routingContext;
+	        GetRolesForLogin = getRolesForLogin;
+
+	        _engine = new PublishedContentRequestEngine(
+                routingConfig,
+                this);
 
             RenderingEngine = RenderingEngine.Unknown;
+	    }
+
+        [EditorBrowsable(EditorBrowsableState.Never)]
+        [Obsolete("Use the constructor specifying all dependencies instead")]
+		public PublishedContentRequest(Uri uri, RoutingContext routingContext)
+            : this(uri, routingContext, UmbracoConfig.For.UmbracoSettings().WebRouting, s => Roles.Provider.GetRolesForUser(s))
+		{
 		}
 
 		/// <summary>
@@ -86,15 +115,25 @@ namespace Umbraco.Web.Routing
 		    _readonly = __readonly;
 		}
 
+        /// <summary>
+        /// Triggers the Preparing event.
+        /// </summary>
+	    internal void OnPreparing()
+	    {
+	        var handler = Preparing;
+            if (handler != null) handler(this, EventArgs.Empty);
+	        _readonlyUri = true;
+	    }
+
 		/// <summary>
 		/// Triggers the Prepared event.
 		/// </summary>
 		internal void OnPrepared()
 		{
-			if (Prepared != null)
-				Prepared(this, EventArgs.Empty);
+            var handler = Prepared;
+            if (handler != null) handler(this, EventArgs.Empty);
 
-		    if (!HasPublishedContent)
+		    if (HasPublishedContent == false)
                 Is404 = true; // safety
 
 		    _readonly = true;
@@ -104,7 +143,18 @@ namespace Umbraco.Web.Routing
 		/// Gets or sets the cleaned up Uri used for routing.
 		/// </summary>
 		/// <remarks>The cleaned up Uri has no virtual directory, no trailing slash, no .aspx extension, etc.</remarks>
-		public Uri Uri { get; private set; }
+		public Uri Uri {
+		    get
+		    {
+		        return _uri;
+		    }
+		    set
+		    {
+                if (_readonlyUri)
+                    throw new InvalidOperationException("Cannot modify Uri after Preparing has triggered.");
+		        _uri = value;
+		    }
+        }
 
         private void EnsureWriteable()
         {
@@ -150,7 +200,8 @@ namespace Umbraco.Web.Routing
         /// preserve or reset the template, if any.</remarks>
         public void SetInternalRedirectPublishedContent(IPublishedContent content)
         {
-            EnsureWriteable();
+		    if (content == null) throw new ArgumentNullException("content");
+		    EnsureWriteable();
 
             // unless a template has been set already by the finder,
             // template should be null at that point. 
@@ -334,10 +385,17 @@ namespace Umbraco.Web.Routing
 
 		#region Domain and Culture
 
-		/// <summary>
+	    [Obsolete("Do not use this property, use the non-legacy UmbracoDomain property instead")]
+	    public Domain Domain
+	    {
+	        get { return new Domain(UmbracoDomain); }
+	    }
+
+        //TODO: Should we publicize the setter now that we are using a non-legacy entity??
+        /// <summary>
         /// Gets or sets the content request's domain.
         /// </summary>
-        public Domain Domain { get; internal set; }
+        public IDomain UmbracoDomain { get; internal set; }
 
 		/// <summary>
 		/// Gets or sets the content request's domain Uri.
@@ -350,7 +408,7 @@ namespace Umbraco.Web.Routing
 		/// </summary>
 		public bool HasDomain
 		{
-			get { return Domain != null; }
+			get { return UmbracoDomain != null; }
 		}
 
 	    private CultureInfo _culture;
@@ -387,7 +445,9 @@ namespace Umbraco.Web.Routing
 		/// </summary>
 		public RoutingContext RoutingContext { get; private set; }
 
-		/// <summary>
+	    internal Func<string, IEnumerable<string>> GetRolesForLogin { get; private set; }
+
+	    /// <summary>
 		/// The "umbraco page" object.
 		/// </summary>
 		private page _umbracoPage;
@@ -432,7 +492,7 @@ namespace Umbraco.Web.Routing
         /// <summary>
         /// Gets a value indicating whether the content request triggers a redirect (permanent or not).
         /// </summary>
-        public bool IsRedirect { get { return !string.IsNullOrWhiteSpace(RedirectUrl); } }
+        public bool IsRedirect { get { return string.IsNullOrWhiteSpace(RedirectUrl) == false; } }
 
         /// <summary>
         /// Gets or sets a value indicating whether the redirect is permanent.
